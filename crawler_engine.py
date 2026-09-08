@@ -10,6 +10,8 @@ from bs4 import BeautifulSoup
 from openai import OpenAI
 
 
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
+
 client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
 # ==========================================
 
