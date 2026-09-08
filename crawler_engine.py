@@ -8,12 +8,17 @@ from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
 from openai import OpenAI
+import httpx
 
 # ================= 配置区 =================
 # 【务必修改】在这里填入你申请的真实 DeepSeek API Key
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
-client = OpenAI(api_key=DEEPSEEK_API_KEY, base_url="https://api.deepseek.com")
+client = OpenAI(
+    api_key=DEEPSEEK_API_KEY, 
+    base_url="https://api.deepseek.com",
+    http_client=httpx.Client(proxies=None) # 显式清空代理干扰
+)
 # ==========================================
 
 current_dir = os.path.dirname(os.path.abspath(__file__))
