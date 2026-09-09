@@ -45,19 +45,34 @@ else:
 
     st.markdown("---")
 
-    # --- 过滤器 ---
-    col_filter1, col_filter2 = st.columns(2)
+    # --- 过滤器 (扩展为三列，新增影响程度筛选) ---
+    col_filter1, col_filter2, col_filter3 = st.columns(3)
     with col_filter1:
         date_list = sorted(df['crawl_timestamp'].dt.date.unique(), reverse=True)
         selected_date = st.selectbox("📅 查看日期", date_list)
     with col_filter2:
         comp_list = df['competitor'].unique().tolist()
         selected_comp = st.multiselect("🎯 筛选竞对", comp_list, default=comp_list)
+    with col_filter3:
+        # 新增：与下方 UI 匹配的标签筛选器
+        risk_labels = ["🔴 重大影响 (8-10分)", "🟡 值得关注 (5-7分)", "🟢 影响较小 (1-4分)"]
+        selected_risks = st.multiselect("⚠️ 影响程度筛选", risk_labels, default=risk_labels)
 
+    # --- 动态构建分数过滤逻辑 ---
+    allowed_scores = []
+    if "🔴 重大影响 (8-10分)" in selected_risks:
+        allowed_scores.extend([8, 9, 10])
+    if "🟡 值得关注 (5-7分)" in selected_risks:
+        allowed_scores.extend([5, 6, 7])
+    if "🟢 影响较小 (1-4分)" in selected_risks:
+        allowed_scores.extend([0, 1, 2, 3, 4])  # 包含0分(兜底解析失败的)
+
+    # 组合多重过滤条件
     filtered_df = df[
         (df['crawl_timestamp'].dt.date == selected_date) &
-        (df['competitor'].isin(selected_comp))
-        ]
+        (df['competitor'].isin(selected_comp)) &
+        (df['ai_score'].isin(allowed_scores))
+    ]
 
     # --- 呈现实时情报流 ---
     st.subheader(f"情报动态 ({len(filtered_df)} 条)")

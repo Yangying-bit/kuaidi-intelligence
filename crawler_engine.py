@@ -4,11 +4,10 @@ import random
 import urllib.parse
 import sqlite3
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import requests
 from bs4 import BeautifulSoup
 from openai import OpenAI
-
 
 DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY")
 
@@ -26,39 +25,37 @@ def init_db():
     cursor.execute('''
                    CREATE TABLE IF NOT EXISTS news_v2
                    (
-                       id
-                       INTEGER
-                       PRIMARY
-                       KEY
-                       AUTOINCREMENT,
-                       publish_time
-                       TEXT,
-                       competitor
-                       TEXT,
-                       business
-                       TEXT,
-                       title
-                       TEXT,
-                       snippet
-                       TEXT,
-                       url
-                       TEXT
-                       UNIQUE,
-                       ai_score
-                       INTEGER,
-                       ai_analysis
-                       TEXT,
-                       ai_suggestion
-                       TEXT,
-                       crawl_timestamp
-                       DATETIME
-                       DEFAULT
-                       CURRENT_TIMESTAMP
+                       id INTEGER PRIMARY KEY AUTOINCREMENT,
+                       publish_time TEXT,
+                       competitor TEXT,
+                       business TEXT,
+                       title TEXT,
+                       snippet TEXT,
+                       url TEXT UNIQUE,
+                       ai_score INTEGER,
+                       ai_analysis TEXT,
+                       ai_suggestion TEXT,
+                       crawl_timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
                    )
                    ''')
     conn.commit()
     conn.close()
 
+def is_recent_news(pub_time_str):
+    try:
+        # 尝试解析标准时间格式
+        pub_time = datetime.strptime(pub_time_str, "%Y-%m-%d %H:%M:%S")
+        now = datetime.now()
+        # 判断时间差是否在 2 小时以内
+        if timedelta(0) <= (now - pub_time) <= timedelta(hours=2):
+            return True
+        return False
+    except ValueError:
+        # 兜底逻辑：包含这些字眼的一律放行 (完美适配百度新闻的"1小时前"等格式)
+        recent_keywords = ['刚刚', '分钟', '小时', '今天']
+        if any(keyword in pub_time_str for keyword in recent_keywords):
+            return True
+        return False
 
 def analyze_with_deepseek(competitor, title, snippet):
     """调用 DeepSeek 接口，进行深度业务情报分析"""
@@ -94,10 +91,8 @@ def analyze_with_deepseek(competitor, title, snippet):
 def run_crawler():
     """核心爬虫引擎：全量覆盖你要求的竞对与全套搜索关键词"""
 
-    # 竞对池
     COMPETITORS = ["菜鸟", "快递鸟", "顺丰", "京东快递", "德邦", "中通", "圆通", "韵达", "申通", "极兔", "邮政"]
 
-    # 严格对齐你提供的全部业务与价格、产品关键词
     KEYWORDS = [
         "快递查询API", "个人寄件", "商家寄件", "企业寄件", "快递员揽件",
         "企业快递管理saas", "商家快递管理saas", "邮政", "物流", "跨境快递",
@@ -119,7 +114,6 @@ def run_crawler():
 
     for comp in COMPETITORS:
         for kw in KEYWORDS:
-            # 组合搜索，并排除自家干扰
             search_term = f"{comp} {kw} -快递100"
             encoded_term = urllib.parse.quote(search_term)
 
@@ -145,8 +139,13 @@ def run_crawler():
 
                     # 提取真实发布时间
                     time_span = parent_div.find('span', class_='c-color-gray2') if parent_div else None
-                    real_publish_time = time_span.text.strip() if time_span else datetime.now().strftime(
-                        "%Y-%m-%d %H:%M")
+                    real_publish_time = time_span.text.strip() if time_span else datetime.now().strftime("%Y-%m-%d %H:%M")
+
+                    # ==========================================
+                    # 🔴 核心拦截器：如果不是最近2小时的新闻，直接跳过！
+                    if not is_recent_news(real_publish_time):
+                        continue
+                    # ==========================================
 
                     snippet = parent_div.text.strip().replace(title, '')[:150] if parent_div else ""
 
@@ -176,7 +175,7 @@ def run_crawler():
 
     conn.commit()
     conn.close()
-    print(f"✅ 本轮抓取结束！共成功挖掘并深度分析了 {new_count} 条全网核心情报。")
+    print(f"✅ 本轮抓取结束！共成功挖掘并深度分析了 {new_count} 条2小时内的全网核心情报。")
 
 
 if __name__ == "__main__":
