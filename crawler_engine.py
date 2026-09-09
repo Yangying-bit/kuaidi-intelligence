@@ -45,17 +45,22 @@ def is_recent_news(pub_time_str):
     try:
         # 尝试解析标准时间格式
         pub_time = datetime.strptime(pub_time_str, "%Y-%m-%d %H:%M:%S")
-        now = datetime.now()
+        
+        # 🌟 修复时区陷阱：强制使用北京时间 (UTC+8) 代替默认的云端时间
+        now = datetime.utcnow() + timedelta(hours=8)
+        
         # 判断时间差是否在 2 小时以内
         if timedelta(0) <= (now - pub_time) <= timedelta(hours=2):
             return True
         return False
     except ValueError:
-        # 兜底逻辑：包含这些字眼的一律放行 (完美适配百度新闻的"1小时前"等格式)
+        # 兜底逻辑：包含这些字眼的一律放行
         recent_keywords = ['刚刚', '分钟', '小时', '今天']
         if any(keyword in pub_time_str for keyword in recent_keywords):
             return True
         return False
+
+
 
 def analyze_with_deepseek(competitor, title, snippet):
     """调用 DeepSeek 接口，进行深度业务情报分析"""
