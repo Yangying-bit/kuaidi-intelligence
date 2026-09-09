@@ -73,7 +73,7 @@ def analyze_with_deepseek(competitor, title, snippet):
     内容摘要: {snippet}
 
     请严格以 JSON 格式输出，必须且只能包含以下四个字段：
-    1. "summary": AI资讯总结 (对内容摘要进行准确无误的提炼总结，消除网页乱码或冗余字眼，50字以内，语言精练)。
+    1. "summary": AI资讯总结 (对内容摘要进行准确无误的总结，消除网页乱码或冗余字眼，50字以内，语言清晰贴合新闻文意，稍精炼)。
     2. "score": 影响程度打分 (整数，1-10分。1-4分为常规动态，5-7分为值得警惕，8-10分为严重威胁或重大商机)。
     3. "analysis": 简要分析竞对此举会如何影响我们的客户留存、API调用利润或SaaS市场份额（100字以内，一针见血）。
     4. "suggestion": 给业务团队的实操建议（一句话，例如降价应对、推出组合拳或跟进新功能）。
@@ -150,8 +150,8 @@ def run_crawler():
 
                     # ==========================================
                     # 🔴 核心拦截器：如果不是最近2小时的新闻，直接跳过！
-                    # if not is_recent_news(real_publish_time):
-                        # continue
+                    if not is_recent_news(real_publish_time):
+                        continue
                     # ==========================================
 
                     snippet = parent_div.text.strip().replace(title, '')[:150] if parent_div else ""
