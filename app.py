@@ -92,7 +92,7 @@ else:
             st.caption(f"发现时间: {row['publish_time']} | 影响评估: {status} ({score}/10)")
 
             # 使用折叠面板展示 AI 深度分析，保持页面清爽
-            with st.expander("🤖 查看 DeepSeek 深度分析与应对策略"):
-                st.markdown(f"**🤖 AI资讯总结：** {row['snippet']}")
+            with st.expander("查看 DeepSeek 深度分析与应对策略"):
+                st.markdown(f"**AI资讯总结：** {row['snippet']}")
                 st.markdown(f"**🧠 业务影响分析：** {row['ai_analysis']}")
                 st.markdown(f"**💡 应对建议：** {row['ai_suggestion']}")
