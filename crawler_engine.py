@@ -50,8 +50,8 @@ def is_recent_news(pub_time_str):
         # 🌟 修复时区陷阱：强制使用北京时间 (UTC+8) 代替默认的云端时间
         now = datetime.utcnow() + timedelta(hours=8)
 
-        # 判断时间差是否在 2 小时以内
-        if timedelta(0) <= (now - pub_time) <= timedelta(hours=24):
+        # 判断时间差是否在 4 小时以内
+        if timedelta(0) <= (now - pub_time) <= timedelta(hours=4):
             return True
         return False
     except ValueError:
@@ -149,7 +149,7 @@ def run_crawler():
                     real_publish_time = time_span.text.strip() if time_span else datetime.now().strftime("%Y-%m-%d %H:%M")
 
                     # ==========================================
-                    # 🔴 核心拦截器：如果不是最近2小时的新闻，直接跳过！
+                    # 🔴 核心拦截器：如果不是最近4小时的新闻，直接跳过！
                     if not is_recent_news(real_publish_time):
                         continue
                     # ==========================================
