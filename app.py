@@ -24,7 +24,10 @@ def load_data():
 
 df = load_data()
 
-st.title("👁️‍🗨️ 寄件API与SaaS竞对情报 - DeepSeek 驱动")
+# 按照时间倒序排列（最新时间排在最上面）
+df = df.sort_values(by='crawl_timestamp', ascending=False).reset_index(drop=True)
+
+st.title("👁️‍🗨️行业竞对情报——DeepSeek驱动分析")
 
 if df.empty:
     st.info("系统正在收集中... 请确保后台 crawler_engine.py 正在运行，并已正确配置 DeepSeek API Key。")
