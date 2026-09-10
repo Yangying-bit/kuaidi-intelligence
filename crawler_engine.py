@@ -51,12 +51,12 @@ def is_recent_news(pub_time_str):
         now = datetime.utcnow() + timedelta(hours=8)
 
         # 判断时间差是否在 2 小时以内
-        if timedelta(0) <= (now - pub_time) <= timedelta(hours=2):
+        if timedelta(0) <= (now - pub_time) <= timedelta(hours=24):
             return True
         return False
     except ValueError:
         # 兜底逻辑：包含这些字眼的一律放行
-        recent_keywords = ['刚刚', '分钟', '小时', '今天']
+        recent_keywords = ['刚刚', '分钟', '小时', '今天', '昨天']
         if any(keyword in pub_time_str for keyword in recent_keywords):
             return True
         return False
