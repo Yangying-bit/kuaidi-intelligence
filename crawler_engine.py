@@ -150,8 +150,8 @@ def run_crawler():
 
                     # ==========================================
                     # 🔴 核心拦截器：如果不是最近4小时的新闻，直接跳过！
-                    if not is_recent_news(real_publish_time):
-                        continue
+                    # if not is_recent_news(real_publish_time):
+                        # continue
                     # ==========================================
 
                     snippet = parent_div.text.strip().replace(title, '')[:150] if parent_div else ""
