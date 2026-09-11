@@ -50,8 +50,8 @@ def is_recent_news(pub_time_str):
         # 🌟 修复时区陷阱：强制使用北京时间 (UTC+8) 代替默认的云端时间
         now = datetime.utcnow() + timedelta(hours=8)
 
-        # 判断时间差是否在 4 小时以内
-        if timedelta(0) <= (now - pub_time) <= timedelta(hours=4):
+        # 判断时间差是否在 2 小时以内
+        if timedelta(0) <= (now - pub_time) <= timedelta(hours=24):
             return True
         return False
     except ValueError:
@@ -73,7 +73,7 @@ def analyze_with_deepseek(competitor, title, snippet):
     内容摘要: {snippet}
 
     请严格以 JSON 格式输出，必须且只能包含以下四个字段：
-    1. "summary": AI资讯总结 (对内容摘要进行准确无误的总结，消除网页乱码或冗余字眼，50字以内，语言清晰贴合新闻文意，稍精炼)。
+    1. "summary": AI资讯总结 (对内容摘要进行准确无误的提炼总结，消除网页乱码或冗余字眼，50字以内，语言精练)。
     2. "score": 影响程度打分 (整数，1-10分。1-4分为常规动态，5-7分为值得警惕，8-10分为严重威胁或重大商机)。
     3. "analysis": 简要分析竞对此举会如何影响我们的客户留存、API调用利润或SaaS市场份额（100字以内，一针见血）。
     4. "suggestion": 给业务团队的实操建议（一句话，例如降价应对、推出组合拳或跟进新功能）。
@@ -93,6 +93,71 @@ def analyze_with_deepseek(competitor, title, snippet):
     except Exception as e:
         print(f"⚠️ AI 分析遭遇波动: {e}")
         return snippet, 0, "AI分析暂时失败，稍后可手动重试", "无"
+
+def fetch_multi_engine(search_term):
+    """核心抓取引擎：三合一全网搜刮 (百度 + 必应 + 搜狗微信)"""
+    results = []
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    encoded_term = urllib.parse.quote(search_term)
+
+    # 1. 百度新闻 (rtt=4 强制按时间排序)
+    try:
+        url_baidu = f"https://www.baidu.com/s?rtt=4&bsst=1&cl=2&tn=news&word={encoded_term}"
+        resp = requests.get(url_baidu, headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for item in soup.find_all('h3')[:3]:  # 取前3条
+            a_tag = item.find('a')
+            if a_tag:
+                title = a_tag.text.strip()
+                link = a_tag.get('href')
+                parent_div = item.parent
+                time_span = parent_div.find('span', class_='c-color-gray2') if parent_div else None
+                pub_time = time_span.text.strip() if time_span else "今天"
+                snippet = parent_div.text.strip().replace(title, '')[:150] if parent_div else title
+                results.append({"title": title, "link": link, "time": pub_time, "snippet": snippet, "source": "Baidu"})
+    except Exception:
+        pass
+
+    # 2. 必应新闻 (&qft=interval="4" 限制24小时内)
+    try:
+        url_bing = f"https://cn.bing.com/news/search?q={encoded_term}&qft=interval%3d%224%22"
+        resp = requests.get(url_bing, headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for item in soup.find_all('div', class_='news-card')[:3]:
+            a_tag = item.find('a', class_='title')
+            if a_tag:
+                title = a_tag.text.strip()
+                link = a_tag.get('href')
+                time_span = item.find('span', tabindex="0")
+                pub_time = time_span.text.strip() if time_span else "今天"
+                snippet_tag = item.find('div', class_='snippet')
+                snippet = snippet_tag.text.strip() if snippet_tag else title
+                results.append({"title": title, "link": link, "time": pub_time, "snippet": snippet, "source": "Bing"})
+    except Exception:
+        pass
+
+    # 3. 搜狗微信公众号 (&tsn=1 限制1天内)
+    try:
+        url_sogou = f"https://weixin.sogou.com/weixin?type=2&query={encoded_term}&tsn=1"
+        resp = requests.get(url_sogou, headers=headers, timeout=10)
+        soup = BeautifulSoup(resp.text, "html.parser")
+        for item in soup.find_all('div', class_='txt-box')[:3]:
+            a_tag = item.find('h3').find('a')
+            if a_tag:
+                title = a_tag.text.strip()
+                href = a_tag.get('href')
+                link = "https://weixin.sogou.com" + href if href.startswith('/') else href
+                time_span = item.find('span', class_='s-p')
+                pub_time = "今天" # 微信的精确时间需要解析 JS，这里用今天兜底，依靠数据库去重
+                snippet_tag = item.find('p', class_='txt-info')
+                snippet = snippet_tag.text.strip() if snippet_tag else title
+                results.append({"title": title, "link": link, "time": pub_time, "snippet": snippet, "source": "WeChat"})
+    except Exception:
+        pass
+
+    return results
 
 
 def run_crawler():
@@ -123,6 +188,15 @@ def run_crawler():
         for kw in KEYWORDS:
             search_term = f"{comp} {kw} -快递100"
             encoded_term = urllib.parse.quote(search_term)
+            # 调用多引擎抓取
+            scraped_items = fetch_multi_engine(search_term)
+
+            for item in scraped_items:
+                title = item['title']
+                link = item['link']
+                pub_time = item['time']
+                snippet = item['snippet']
+                source = item['source']
 
             # rtt=4 强制按最新时间排序
             url = f"https://www.baidu.com/s?rtt=4&bsst=1&cl=2&tn=news&word={encoded_term}"
@@ -149,7 +223,7 @@ def run_crawler():
                     real_publish_time = time_span.text.strip() if time_span else datetime.now().strftime("%Y-%m-%d %H:%M")
 
                     # ==========================================
-                    # 🔴 核心拦截器：如果不是最近4小时的新闻，直接跳过！
+                    # 🔴 核心拦截器：如果不是最近2小时的新闻，直接跳过！
                     if not is_recent_news(real_publish_time):
                         continue
                     # ==========================================
