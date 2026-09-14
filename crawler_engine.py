@@ -204,18 +204,24 @@ def fetch_kdniao_official():
 def run_crawler():
     """主控调度逻辑"""
 
-    # 1. 精简的竞对名单 (去除了过多的C端快递，聚焦B端)
     COMPETITORS = ["菜鸟", "快递鸟", "顺丰", "京东快递", "德邦", "中通", "圆通", "韵达", "申通", "极兔", "邮政"]
-
-    KEYWORDS = [
-        "同城急送 API", "上门取件 接口", "智选运力", "国际寄件 API", "大件快运 接口",
-        "同城急送 接口", "个人寄件", "商家寄件", "企业寄件", "线上支付", "线下支付",
-        "企业寄件", "开放平台 寄件", "商家发货", "免开发 寄件组件",
-        "企业快递管理saas", "电商快递管理saas", "物流","电商平台快递",
-        "预充值" ,"快递单价", "快递价格", "快递行业","API",
-        "API价格", "电商", "开放平台", "寄件接口", "运费 补贴",
-        "管理SaaS", "寄件API", "大客户降价", "API服务","大客户 签约"
+    
+    # 词槽 A：核心产品
+    SCENARIOS = ["同城急送", "上门取件", "国际寄件", "大件快运", "寄大件","免开发 寄件组件"]
+    
+    # 词槽 B：技术接口同义词 (可以随时在这里补充，比如加上 "SDK" 或 "对接")
+    API_SYNONYMS = ["API", "接口", "对接"]
+    
+    # 词槽 C：不需要组合的、独立的商业监控词
+    INDEPENDENT_WORDS = [
+        "电商退货","多地址发货","二手闲置交易","开放平台 寄件", "商家发货",
+        "个人寄件", "商家寄件", "企业寄件", "线上支付", "线下支付","智选运力",
+        "预充值" ,"快递单价", "快递价格", "快递行业","API","API价格","API服务",
     ]
+
+    # 🪄 自动魔法组合 (利用 Python 列表推导式)：
+    # 这行代码会自动帮你把场景和同义词拼起来，生成："同城急送 API", "同城急送 接口"...
+    KEYWORDS = [f"{scene} {syn}" for scene in SCENARIOS for syn in API_SYNONYMS] + INDEPENDENT_WORDS
 
     print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🚀 云端情报系统启动...")
 
@@ -237,6 +243,7 @@ def run_crawler():
                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                            ''', ("今天", "快递鸟", "官网更新", item['title'], ai_summary, item['link'], score, analysis, suggestion))
             new_count += 1
+            conn.commit()
             time.sleep(random.uniform(1.5, 3.0))
 
     # ==========================================
@@ -266,7 +273,8 @@ def run_crawler():
                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                                        ''', (item['time'], comp, kw, item['title'], ai_summary, item['link'], score, analysis, suggestion))
                         new_count += 1
-
+                        conn.commit()
+                        
             time.sleep(random.uniform(1.5, 3.0))
 
     conn.commit()
