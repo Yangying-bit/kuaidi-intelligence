@@ -25,7 +25,8 @@ def load_data():
 df = load_data()
 
 # 按照时间倒序排列（最新时间排在最上面）
-df = df.sort_values(by='crawl_timestamp', ascending=False).reset_index(drop=True)
+if not df.empty:
+    df = df.sort_values(by='crawl_timestamp', ascending=False).reset_index(drop=True)
 
 st.title("👁️‍🗨️行业竞对情报——DeepSeek驱动分析")
 
@@ -71,7 +72,8 @@ else:
     col_filter1, col_filter2, col_filter3 = st.columns(3)
     with col_filter1:
         date_list = sorted(df['crawl_timestamp'].dt.date.unique(), reverse=True)
-        selected_date = st.selectbox("📅 查看日期", date_list)
+        # 加上容错处理，防止 date_list 为空时报错
+        selected_date = st.selectbox("📅 查看日期", date_list) if date_list else None
     with col_filter2:
         comp_list = df['competitor'].unique().tolist()
         selected_comp = st.multiselect("🎯 筛选竞对", comp_list, default=comp_list)
@@ -90,17 +92,20 @@ else:
         allowed_scores.extend([0, 1, 2, 3, 4])  # 包含0分(兜底解析失败的)
 
     # 组合多重过滤条件
-    filtered_df = df[
-        (df['crawl_timestamp'].dt.date == selected_date) &
-        (df['competitor'].isin(selected_comp)) &
-        (df['ai_score'].isin(allowed_scores))
+    if selected_date:
+        filtered_df = df[
+            (df['crawl_timestamp'].dt.date == selected_date) &
+            (df['competitor'].isin(selected_comp)) &
+            (df['ai_score'].isin(allowed_scores))
         ]
+    else:
+        filtered_df = pd.DataFrame()
 
-    # --- 呈现实时情报流 ---
-    st.subheader(f"情报动态 ({len(filtered_df)} 条)")
-
-    for index, row in filtered_df.iterrows():
-        # 根据 AI 打分决定卡片的颜色提示
+    # ==========================================
+    # 🌟 核心修改区：封装卡片渲染函数
+    # ==========================================
+    def render_news_card(row):
+        """将单条新闻渲染为 UI 卡片"""
         score = row.get('ai_score', 0)
         if score >= 8:
             status = "🔴 重大影响"
@@ -113,8 +118,41 @@ else:
             st.markdown(f"**【{row['competitor']} - {row['business']}】** [{row['title']}]({row['url']})")
             st.caption(f"发现时间: {row['publish_time']} | 影响评估: {status} ({score}/10)")
 
-            # 使用折叠面板展示 AI 深度分析，保持页面清爽
             with st.expander("查看 DeepSeek 深度分析与应对策略"):
                 st.markdown(f"**AI资讯总结：** {row['snippet']}")
                 st.markdown(f"**🧠 业务影响分析：** {row['ai_analysis']}")
                 st.markdown(f"**💡 应对建议：** {row['ai_suggestion']}")
+
+    # ==========================================
+    # 🌟 核心修改区：Tabs 标签页布局
+    # ==========================================
+    st.markdown("### 📡 实时情报流")
+    
+    if not filtered_df.empty:
+        # 数据分离：划分为“快递鸟”和“其他竞对”
+        kdniao_df = filtered_df[filtered_df['competitor'] == '快递鸟']
+        other_df = filtered_df[filtered_df['competitor'] != '快递鸟']
+
+        # 构建并排的标签页
+        tab1, tab2 = st.tabs([
+            f"🦅 快递鸟专属阵地 ({len(kdniao_df)} 条)", 
+            f"🌐 行业综合情报 ({len(other_df)} 条)"
+        ])
+
+        # 渲染快递鸟专属板块
+        with tab1:
+            if kdniao_df.empty:
+                st.info("在当前筛选条件下，暂无快递鸟的情报。")
+            else:
+                for index, row in kdniao_df.iterrows():
+                    render_news_card(row)
+
+        # 渲染其他竞对综合板块
+        with tab2:
+            if other_df.empty:
+                st.info("在当前筛选条件下，暂无其他同行的情报。")
+            else:
+                for index, row in other_df.iterrows():
+                    render_news_card(row)
+    else:
+        st.warning("当前筛选条件下无数据，请尝试调整上方的日期或影响程度过滤器。")
