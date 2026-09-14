@@ -52,7 +52,7 @@ else:
     st.markdown("---")
 
     # 🌟 修改点 2：新增数据量化统计图表模块
-    st.subheader("📈 基础量化统计")
+    st.subheader("描述统计")
     col_chart1, col_chart2 = st.columns(2)
 
     with col_chart1:
