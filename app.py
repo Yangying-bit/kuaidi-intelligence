@@ -34,17 +34,36 @@ if df.empty:
 else:
     # --- 顶栏指标 ---
     now = datetime.now()
-    two_hours_ago = now - timedelta(hours=2)
+    two_hours_ago = now - timedelta(hours=2)  # 如果你之前把 GitHub Actions 改成了3小时，这里也可以改成3
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
     new_last_2h = df[df['crawl_timestamp'] >= two_hours_ago].shape[0]
     new_today = df[df['crawl_timestamp'] >= today_start].shape[0]
     high_threats = df[df['ai_score'] >= 7].shape[0]  # AI 评估大于等于7分的定为高危
+    total_count = df.shape[0]  # 历史总数据量
 
-    col1, col2, col3 = st.columns(3)
+    # 🌟 修改点 1：扩展为 4 列，加上历史总数
+    col1, col2, col3, col4 = st.columns(4)
     col1.metric("🔥 过去2小时新增", f"{new_last_2h} 条")
     col2.metric("📅 今日累计抓取", f"{new_today} 条")
     col3.metric("🚨 历史高危预警 (AI评估>7分)", f"{high_threats} 条")
+    col4.metric("📚 历史情报总库", f"{total_count} 条")
+
+    st.markdown("---")
+
+    # 🌟 修改点 2：新增数据量化统计图表模块
+    st.subheader("📈 基础量化统计")
+    col_chart1, col_chart2 = st.columns(2)
+
+    with col_chart1:
+        st.markdown("**🎯 竞对活跃度排行 (抓取条数)**")
+        comp_counts = df['competitor'].value_counts()
+        st.bar_chart(comp_counts)
+
+    with col_chart2:
+        st.markdown("**🏷️ 业务焦点分布 (抓取条数)**")
+        biz_counts = df['business'].value_counts()
+        st.bar_chart(biz_counts)
 
     st.markdown("---")
 
@@ -75,7 +94,7 @@ else:
         (df['crawl_timestamp'].dt.date == selected_date) &
         (df['competitor'].isin(selected_comp)) &
         (df['ai_score'].isin(allowed_scores))
-    ]
+        ]
 
     # --- 呈现实时情报流 ---
     st.subheader(f"情报动态 ({len(filtered_df)} 条)")
