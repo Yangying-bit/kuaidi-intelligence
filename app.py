@@ -74,11 +74,19 @@ else:
         st.session_state.selected_biz = None
 
     with col_chart2:
+        # 🌟 修复卡顿闪屏的核心科技：提前拦截！
+        # 直接从底层的 session_state 里读取点击事件，如果发现被点击了，直接切换状态。
+        # 彻底杜绝“画完热力图才发现被点击，然后再强行刷新画柱状图”的二次渲染悲剧。
+        if "treemap_chart" in st.session_state:
+            pts = st.session_state["treemap_chart"].get("selection", {}).get("points", [])
+            if pts:
+                st.session_state.selected_biz = pts[0].get("label")
+
         # ==========================================
         # 状态 A：全局热力大盘
         # ==========================================
         if st.session_state.selected_biz is None:
-            st.markdown("**🏷️ 业务焦点热力分布**")
+            st.markdown("**🏷️ 业务焦点热力分布 (🖱️点击色块进入专场)**")
             
             biz_df = df['business'].value_counts().reset_index()
             biz_df.columns = ['业务模块', '频次']
@@ -98,19 +106,15 @@ else:
                 fig.update_coloraxes(showscale=False)
                 fig.update_traces(tiling=dict(pad=0), marker=dict(line=dict(color='white', width=2)))
                 
-                event = st.plotly_chart(
-                    fig, use_container_width=True, theme=None, on_select="rerun", selection_mode="points", key="treemap_chart"
+                # 🌟 去掉了所有手动判断 rerun 的冗余代码，只留一个干净的图表渲染
+                st.plotly_chart(
+                    fig, 
+                    use_container_width=True, 
+                    theme=None, 
+                    on_select="rerun", 
+                    selection_mode="points", 
+                    key="treemap_chart"
                 )
-                
-                # 🌟 治愈卡顿核心：防重复刷新锁
-                if isinstance(event, dict) and "selection" in event:
-                    points = event["selection"].get("points", [])
-                    if points:
-                        new_biz = points[0].get("label")
-                        # 只有当确实点了一个新的色块时，才允许系统刷新
-                        if st.session_state.selected_biz != new_biz:
-                            st.session_state.selected_biz = new_biz
-                            st.rerun() 
             else:
                 st.info("暂无业务数据构成热力图")
 
@@ -136,14 +140,11 @@ else:
                 import plotly.express as px
                 fig_bar = px.bar(sub_df, x='竞对', y='数量', text='数量')
                 
-                # 🌟 获取最大值，用来动态计算天花板高度
                 max_val = sub_df['数量'].max()
-                # 防止全是 0 的极端情况报错
                 y_max = max_val * 1.25 if max_val > 0 else 1 
                 
                 fig_bar.update_layout(
                     height=325,
-                    # 顶部边距 t 稍微调大一点 (从 20 改到 30)，给数字多留点物理空间
                     margin=dict(t=30, l=10, r=10, b=40), 
                     paper_bgcolor='#9FC5E8', 
                     plot_bgcolor='#9FC5E8',
@@ -157,20 +158,16 @@ else:
                         gridcolor='rgba(255,255,255,0.4)', 
                         title=None, 
                         showticklabels=False,
-                        # 🌟 核心修复：强制设定 Y 轴的范围，永远比最高柱子多 25% 的空间
                         range=[0, y_max] 
                     )
                 )
                 
-                # 🌟 解决巨无霸粗柱子问题：智能瘦身
-                # 如果只有 1 家竞对，强制柱子宽度缩减到 0.3；如果有两家以上，宽度设为 0.5
                 bar_width = 0.3 if len(sub_df) == 1 else 0.5
-                
                 fig_bar.update_traces(
                     marker_color='#0B3C6A',
                     textposition='outside', 
                     textfont=dict(color='#0B3C6A', size=16, weight='bold'),
-                    width=bar_width  # 强制生效瘦身比例
+                    width=bar_width
                 )
                 
                 st.plotly_chart(fig_bar, use_container_width=True, theme=None)
