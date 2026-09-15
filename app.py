@@ -86,20 +86,26 @@ else:
                 color_continuous_scale='Blues',
             )
             
-            # 🌟 统一右侧高度并强制透明
             fig.update_layout(
-                height=380,                           # 👈 和左边一模一样的高度
+                height=380,                           
                 margin=dict(t=0, l=0, r=0, b=0),
-                paper_bgcolor='rgba(0,0,0,0)',        # 透明背景
-                plot_bgcolor='rgba(0,0,0,0)',         # 透明背景
+                paper_bgcolor='rgba(0,0,0,0)',        
+                plot_bgcolor='rgba(0,0,0,0)',         
             )
             fig.update_coloraxes(showscale=False)
             
-            # 🌟 核心修复：添加 theme=None，阻止 Streamlit 强制加灰底色！
-            st.plotly_chart(fig, use_container_width=True, theme=None)
+            # 🌟 杀手锏：强制把底层默认的深灰色“垫板”涂成白色！
+            # 顺便加上 width=2 的白色边框线，让方块之间有呼吸感
+            fig.update_traces(
+                root_color="white",
+                marker=dict(line=dict(color='white', width=2)) 
+            )
+            
+            # 换回 streamlit 主题以统一字体，底色已经被我们从内部搞定了
+            st.plotly_chart(fig, use_container_width=True, theme="streamlit")
         else:
             st.info("暂无业务数据构成热力图")
-
+            
     st.markdown("---")
 
     # --- 过滤器 (扩展为三列，新增影响程度筛选) ---
