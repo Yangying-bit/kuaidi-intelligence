@@ -60,18 +60,7 @@ else:
     st.markdown("---")
 
     # 🌟 修改点 2：新增数据量化统计图表模块
-    # 🌟 修改点 2：新增数据量化统计图表模块
-    st.subheader("描述统计")
-    col_chart1, col_chart2 = st.columns(2)
-
-    with col_chart1:
-        st.markdown("**🎯 竞对活跃度排行 (抓取条数)**")
-        comp_counts = df['competitor'].value_counts()
-        # 🌟 统一左侧高度：强制设为 380 像素
-        st.bar_chart(comp_counts, height=380)
-
-    with col_chart2:
-        st.markdown("**🏷️ 业务焦点热力分布 (词块图)**")
+    st.markdown("**🏷️ 业务焦点热力分布 (词块图)**")
         biz_df = df['business'].value_counts().reset_index()
         biz_df.columns = ['业务模块', '频次']
         
@@ -86,23 +75,22 @@ else:
                 color_continuous_scale='Blues',
             )
             
+            # 🌟 终极去黑底方案：暴力涂白
             fig.update_layout(
                 height=380,                           
                 margin=dict(t=0, l=0, r=0, b=0),
-                paper_bgcolor='rgba(0,0,0,0)',        
-                plot_bgcolor='rgba(0,0,0,0)',         
+                paper_bgcolor='#FFFFFF',      # 放弃透明，强制整个画纸变成纯白色
+                plot_bgcolor='#FFFFFF',       # 强制绘图区变成纯白色
             )
             fig.update_coloraxes(showscale=False)
             
-            # 🌟 杀手锏：强制把底层默认的深灰色“垫板”涂成白色！
-            # 顺便加上 width=2 的白色边框线，让方块之间有呼吸感
             fig.update_traces(
-                root_color="white",
+                root_color="#FFFFFF",         # 强制垫底的根节点变成纯白色
                 marker=dict(line=dict(color='white', width=2)) 
             )
             
-            # 换回 streamlit 主题以统一字体，底色已经被我们从内部搞定了
-            st.plotly_chart(fig, use_container_width=True, theme="streamlit")
+            # 🌟 核心：theme=None 彻底拒绝 Streamlit 的强行干预！
+            st.plotly_chart(fig, use_container_width=True, theme=None)
         else:
             st.info("暂无业务数据构成热力图")
             
