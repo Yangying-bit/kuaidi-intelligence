@@ -64,43 +64,72 @@ else:
     col_chart1, col_chart2 = st.columns(2)
 
     with col_chart1:
-        st.markdown("**🎯 竞对活跃度排行 (抓取条数)**")
+        st.markdown("**🎯 竞对活跃度排行 **")
         comp_counts = df['competitor'].value_counts()
         # 🌟 统一左侧高度：强制设为 380 像素
         st.bar_chart(comp_counts, height=380)
 
     with col_chart2:
-        st.markdown("**🏷️ 业务焦点热力分布 (💡点击色块可下钻查看竞对)**")
+        st.markdown("**🏷️ 业务焦点热力分布 **")
         
-        if not df.empty:
-            # 🌟 核心升级：使用 groupby 同时统计 [业务模块] 和 [竞对] 的出现频次
-            biz_comp_df = df.groupby(['business', 'competitor']).size().reset_index(name='频次')
-            biz_comp_df.columns = ['业务模块', '竞对', '频次']
-            
+        # 1. 恢复为干净的单层数据（只统计业务，不糅合竞对）
+        biz_df = df['business'].value_counts().reset_index()
+        biz_df.columns = ['业务模块', '频次']
+        
+        if not biz_df.empty:
             import plotly.express as px
             
+            # 2. 画出纯净版的业务板块图
             fig = px.treemap(
-                biz_comp_df, 
-                path=['业务模块', '竞对'],  # 👈 魔法就在这里：把“竞对”作为第二层级嵌套进去
+                biz_df, 
+                path=['业务模块'],  # 👈 恢复单层展示
                 values='频次',
                 color='频次',
                 color_continuous_scale='Blues',
+                custom_data=['业务模块'] # 🌟 核心暗号：悄悄把模块名字绑定在数据里，方便一会捕捉点击
             )
             
+            # 布局优化：把大图稍微调矮一点(280)，给等下召唤出来的柱状图腾出空间
             fig.update_layout(
-                height=380,                           
+                height=280,                           
                 margin=dict(t=0, l=0, r=0, b=0),
-                paper_bgcolor='rgba(0,0,0,0)',        
-                plot_bgcolor='rgba(0,0,0,0)',         
+                paper_bgcolor='#FFFFFF',        
+                plot_bgcolor='#FFFFFF',         
             )
             fig.update_coloraxes(showscale=False)
-            
             fig.update_traces(
                 tiling=dict(pad=0),           
                 marker=dict(line=dict(color='white', width=2)) 
             )
             
-            st.plotly_chart(fig, use_container_width=True, theme="streamlit")
+            # 3. 🌟 终极交互：捕获你的点击动作！
+            event = st.plotly_chart(
+                fig, 
+                use_container_width=True, 
+                theme=None,
+                on_select="rerun",        # 👈 告诉系统：有人点击图表就立刻刷新局部！
+                selection_mode="points"   # 👈 只捕捉你点中的那个色块
+            )
+            
+            # 4. 解析你点击了哪个色块
+            selected_biz = None
+            if event and "selection" in event and "points" in event["selection"] and len(event["selection"]["points"]) > 0:
+                pt = event["selection"]["points"][0]
+                if "customdata" in pt:
+                    selected_biz = pt["customdata"][0]  # 提取刚才绑定的暗号（业务名字）
+                elif "point_index" in pt:
+                    idx = pt["point_index"]
+                    if idx < len(biz_df):
+                        selected_biz = biz_df.iloc[idx]['业务模块']
+            
+            # 5. 🌟 魔法时刻：如果你点击了某个板块，立刻在下方渲染专属柱状图
+            if selected_biz:
+                st.success(f"**🎯 当前选中赛道：【{selected_biz}】** - 各竞对火力对比：")
+                # 过滤出你选中的业务，并计算各竞对的数量
+                sub_df = df[df['business'] == selected_biz]['competitor'].value_counts()
+                # 画一个专属柱状图（用红色区分，视觉更醒目）
+                st.bar_chart(sub_df, height=180, color="#FF4B4B")
+                
         else:
             st.info("暂无业务数据构成热力图")
             
