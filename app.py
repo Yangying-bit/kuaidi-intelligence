@@ -69,66 +69,96 @@ else:
         # 🌟 统一左侧高度：强制设为 380 像素
         st.bar_chart(comp_counts, height=380)
 
+    # 🌟 1. 记忆胶囊：初始化一个用来记录“当前是否被点击”的状态变量
+    if 'selected_biz' not in st.session_state:
+        st.session_state.selected_biz = None
+
     with col_chart2:
-        st.markdown("**🏷️ 业务焦点热力分布**")
-        
-        biz_df = df['business'].value_counts().reset_index()
-        biz_df.columns = ['业务模块', '频次']
-        
-        if not biz_df.empty:
-            import plotly.express as px
+        # ==========================================
+        # 状态 A：如果没有点击任何色块，展示全局热力大盘
+        # ==========================================
+        if st.session_state.selected_biz is None:
+            st.markdown("**🏷️ 业务焦点热力分布**")
             
-            fig = px.treemap(
-                biz_df, 
-                path=['业务模块'], 
-                values='频次',
-                color='频次',
-                color_continuous_scale='Blues',
-            )
+            biz_df = df['business'].value_counts().reset_index()
+            biz_df.columns = ['业务模块', '频次']
             
-            # 为了给下方的柱状图腾出空间，把热力图高度缩小到 240
-            fig.update_layout(
-                height=240,                           
-                margin=dict(t=0, l=0, r=0, b=0),
-                paper_bgcolor='#FFFFFF',        
-                plot_bgcolor='#FFFFFF',         
-            )
-            fig.update_coloraxes(showscale=False)
-            fig.update_traces(
-                tiling=dict(pad=0),           
-                marker=dict(line=dict(color='white', width=2)) 
-            )
-            
-            # 🌟 捕获点击动作
-            event = st.plotly_chart(
-                fig, 
-                use_container_width=True, 
-                theme=None,
-                on_select="rerun",
-                selection_mode="points"
-            )
-            
-            # 🌟 修复版解析逻辑：更精准、稳定地提取点击的模块名称
-            selected_biz = None
-            if isinstance(event, dict) and "selection" in event:
-                points = event["selection"].get("points", [])
-                if points:
-                    # 直接从 Plotly 的返回字典里提取 'label'（即业务名字）
-                    selected_biz = points[0].get("label") 
-            
-            # 如果成功获取到点击的业务名称，立刻渲染联动柱状图
-            if selected_biz:
-                st.markdown(f"**🎯 选中赛道：【{selected_biz}】** - 各竞对火力情况：")
+            if not biz_df.empty:
+                import plotly.express as px
+                fig = px.treemap(
+                    biz_df, path=['业务模块'], values='频次', color='频次', color_continuous_scale='Blues'
+                )
                 
-                # 过滤出选中的赛道，并统计各竞对数量
-                sub_df = df[df['business'] == selected_biz]['competitor'].value_counts()
+                fig.update_layout(
+                    height=380, # 恢复 380 高度，完美对齐左边
+                    margin=dict(t=0, l=0, r=0, b=0),
+                    paper_bgcolor='#FFFFFF',        
+                    plot_bgcolor='#FFFFFF',         
+                )
+                fig.update_coloraxes(showscale=False)
+                fig.update_traces(tiling=dict(pad=0), marker=dict(line=dict(color='white', width=2)))
                 
-                # 🌟 画风统一核心：去掉了自定义的红色，直接用默认颜色，高度设为 140
-                # 这样 240(热力图) + 140(柱状图) = 380，完美对齐左侧的大柱状图！
-                st.bar_chart(sub_df, height=140)
+                # 捕获点击事件
+                event = st.plotly_chart(
+                    fig, use_container_width=True, theme=None, on_select="rerun", selection_mode="points", key="treemap_chart"
+                )
                 
+                # 如果点中了，把名字存进记忆胶囊，并瞬间刷新页面！
+                if isinstance(event, dict) and "selection" in event:
+                    points = event["selection"].get("points", [])
+                    if points:
+                        st.session_state.selected_biz = points[0].get("label")
+                        st.rerun() # 强制刷新
+            else:
+                st.info("暂无业务数据构成热力图")
+
+        # ==========================================
+        # 状态 B：如果点击了色块，原位翻转为带底色的专属柱状图！
+        # ==========================================
         else:
-            st.info("暂无业务数据构成热力图")
+            selected = st.session_state.selected_biz
+            
+            # 画一个带返回按钮的微型导航栏
+            col_title, col_btn = st.columns([0.8, 0.2])
+            with col_title:
+                st.markdown(f"**🎯 【{selected}】 竞对火力分布**")
+            with col_btn:
+                if st.button("🔙 返回", use_container_width=True):
+                    st.session_state.selected_biz = None # 清除记忆
+                    st.rerun() # 瞬间变回热力图
+                    
+            # 获取专门针对这个赛道的数据
+            sub_df = df[df['business'] == selected]['competitor'].value_counts().reset_index()
+            sub_df.columns = ['竞对', '数量']
+            
+            if not sub_df.empty:
+                import plotly.express as px
+                
+                # 画出专属柱状图
+                fig_bar = px.bar(sub_df, x='竞对', y='数量', text='数量')
+                
+                # 🌟 核心：高度设为 330 (预留50给上面的返回按钮)，总共还是380
+                fig_bar.update_layout(
+                    height=325,
+                    margin=dict(t=20, l=10, r=10, b=10),
+                    # 🌟 重点匹配你的手绘图：给画板铺上一层高级的浅蓝色背景！
+                    paper_bgcolor='#9FC5E8', # 完美契合原本热力图的底色
+                    plot_bgcolor='#9FC5E8',
+                    xaxis=dict(showgrid=False, title=None, tickfont=dict(color='#0B3C6A', weight='bold')),
+                    yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.4)', title=None, showticklabels=False)
+                )
+                
+                # 把柱子涂成深蓝色，与浅蓝底色形成强烈的高级对比
+                fig_bar.update_traces(
+                    marker_color='#0B3C6A',
+                    textposition='outside', 
+                    textfont=dict(color='#0B3C6A', size=14, weight='bold')
+                )
+                
+                # 渲染这个全新的背景柱状图
+                st.plotly_chart(fig_bar, use_container_width=True, theme=None)
+            else:
+                st.info("暂无明细数据")
             
     st.markdown("---")
 
