@@ -69,24 +69,18 @@ else:
         # 🌟 统一左侧高度：强制设为 380 像素
         st.bar_chart(comp_counts, height=380)
 
-    # 🌟 1. 记忆胶囊：初始化状态变量
+    # 🌟 1. 记忆胶囊：初始化状态变量和刷新锁
     if 'selected_biz' not in st.session_state:
         st.session_state.selected_biz = None
+    if 'chart_key_counter' not in st.session_state:
+        st.session_state.chart_key_counter = 0
 
     with col_chart2:
-        # 🌟 修复卡顿闪屏的核心科技：提前拦截！
-        # 直接从底层的 session_state 里读取点击事件，如果发现被点击了，直接切换状态。
-        # 彻底杜绝“画完热力图才发现被点击，然后再强行刷新画柱状图”的二次渲染悲剧。
-        if "treemap_chart" in st.session_state:
-            pts = st.session_state["treemap_chart"].get("selection", {}).get("points", [])
-            if pts:
-                st.session_state.selected_biz = pts[0].get("label")
-
         # ==========================================
         # 状态 A：全局热力大盘
         # ==========================================
         if st.session_state.selected_biz is None:
-            st.markdown("**🏷️ 业务焦点热力分布**")
+            st.markdown("**🏷️ 业务焦点热力分布** (🖱️点击色块下钻)")
             
             biz_df = df['business'].value_counts().reset_index()
             biz_df.columns = ['业务模块', '频次']
@@ -97,6 +91,7 @@ else:
                     biz_df, path=['业务模块'], values='频次', color='频次', color_continuous_scale='Blues'
                 )
                 
+                # 锁定画板高度：380px
                 fig.update_layout(
                     height=380, 
                     margin=dict(t=0, l=0, r=0, b=0),
@@ -106,33 +101,36 @@ else:
                 fig.update_coloraxes(showscale=False)
                 fig.update_traces(tiling=dict(pad=0), marker=dict(line=dict(color='white', width=2)))
                 
-                # 🌟 去掉了所有手动判断 rerun 的冗余代码，只留一个干净的图表渲染
-                st.plotly_chart(
+                event = st.plotly_chart(
                     fig, 
                     use_container_width=True, 
                     theme=None, 
                     on_select="rerun", 
                     selection_mode="points", 
-                    key="treemap_chart"
+                    key=f"treemap_{st.session_state.chart_key_counter}" # 动态锁，防卡顿
                 )
+                
+                if isinstance(event, dict) and "selection" in event:
+                    points = event["selection"].get("points", [])
+                    if points:
+                        st.session_state.selected_biz = points[0].get("label")
+                        st.rerun() # 点击极速翻转
             else:
                 st.info("暂无业务数据构成热力图")
 
         # ==========================================
-        # 状态 B：原位翻转专属柱状图
+        # 状态 B：极简专属柱状图 (无实体按钮版)
         # ==========================================
         else:
             selected = st.session_state.selected_biz
             
-            # 微型导航栏
-            col_title, col_btn = st.columns([0.8, 0.2])
-            with col_title:
-                st.markdown(f"🎯 **【{selected}】** 竞对分布")
-            with col_btn:
-                if st.button("🔙 返回", use_container_width=True):
-                    st.session_state.selected_biz = None 
-                    st.rerun() 
-                    
+            # 🌟 极简绝招：干掉布局分栏和笨重的按钮！
+            # 采用 tertiary 属性，让按钮失去边框和底色，伪装成一行纯文本标题
+            if st.button(f"🎯 【{selected}】 竞对分布 (🖱️点击图表柱子 或 点击此处返回)", type="tertiary"):
+                st.session_state.selected_biz = None 
+                st.session_state.chart_key_counter += 1
+                st.rerun()
+                
             sub_df = df[df['business'] == selected]['competitor'].value_counts().reset_index()
             sub_df.columns = ['竞对', '数量']
             
@@ -143,9 +141,10 @@ else:
                 max_val = sub_df['数量'].max()
                 y_max = max_val * 1.25 if max_val > 0 else 1 
                 
+                # 依然锁定 380px 保证和左侧完美齐平
                 fig_bar.update_layout(
                     height=380,
-                    margin=dict(t=30, l=10, r=10, b=40), 
+                    margin=dict(t=10, l=10, r=10, b=40), # 顶部边距调紧凑，因为没实体按钮了
                     paper_bgcolor='#9FC5E8', 
                     plot_bgcolor='#9FC5E8',
                     xaxis=dict(
@@ -170,7 +169,23 @@ else:
                     width=bar_width
                 )
                 
-                st.plotly_chart(fig_bar, use_container_width=True, theme=None)
+                # 🌟 核心新交互：让柱状图也开启“可点击捕捉”模式
+                event_bar = st.plotly_chart(
+                    fig_bar, 
+                    use_container_width=True, 
+                    theme=None,
+                    on_select="rerun",
+                    selection_mode="points",
+                    key=f"bar_{st.session_state.chart_key_counter}"
+                )
+                
+                # 如果点中了图表里的任意一根柱子，立刻清空记忆并无缝返回
+                if isinstance(event_bar, dict) and "selection" in event_bar:
+                    bar_points = event_bar["selection"].get("points", [])
+                    if len(bar_points) > 0:
+                        st.session_state.selected_biz = None
+                        st.session_state.chart_key_counter += 1
+                        st.rerun()
             else:
                 st.info("暂无明细数据")
             
