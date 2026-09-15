@@ -60,134 +60,169 @@ else:
     st.markdown("---")
 
     # 🌟 修改点 2：新增数据量化统计图表模块
+    # =====================================================================
+    # 状态机初始化：用于控制右侧图表的“下钻 (Drill-down)”状态
+    # =====================================================================
+    if 'drilldown_keyword' not in st.session_state:
+        st.session_state.drilldown_keyword = None
+
+    # 提前拦截 Plotly 的原生点击事件，实现 0 延迟无缝翻转
+    if "treemap_selection" in st.session_state:
+        pts = st.session_state["treemap_selection"].get("selection", {}).get("points", [])
+        if pts:
+            # 捕获用户点击的关键词
+            clicked_keyword = pts[0].get("label")
+            # 只有点击了不同关键词才更新状态
+            if st.session_state.drilldown_keyword != clicked_keyword:
+                st.session_state.drilldown_keyword = clicked_keyword
+
+    # 布局：左右两列
     st.subheader("描述统计")
     col_chart1, col_chart2 = st.columns(2)
 
+    # =====================================================================
+    # 左侧：🎯 竞对活跃度排行 (保持全局统一样式)
+    # =====================================================================
     with col_chart1:
         st.markdown("**🎯 竞对活跃度排行**")
-        comp_counts = df['competitor'].value_counts()
-        # 🌟 统一左侧高度：强制设为 380 像素
-        st.bar_chart(comp_counts, height=380)
+        comp_counts = df['competitor'].value_counts().reset_index()
+        comp_counts.columns = ['竞对', '活跃度']
+        
+        if not comp_counts.empty:
+            import plotly.express as px
+            # 为了联动视觉，左侧也统一使用 Plotly 渲染并采用同样的商务蓝
+            fig_left = px.bar(comp_counts, x='竞对', y='活跃度', text='活跃度')
+            fig_left.update_layout(
+                height=380,  # 统一绝对高度
+                margin=dict(t=20, l=10, r=10, b=30),
+                paper_bgcolor='rgba(0,0,0,0)',
+                plot_bgcolor='rgba(0,0,0,0)',
+                xaxis=dict(showgrid=False, title=None, tickfont=dict(color='#333333', size=13)),
+                yaxis=dict(showgrid=True, gridcolor='#F0F2F6', title=None, showticklabels=False)
+            )
+            fig_left.update_traces(
+                marker_color='#1E88E5', # 统一的科技商务蓝
+                textposition='outside', 
+                textfont=dict(color='#1E88E5', size=13, weight='bold'),
+                width=0.4
+            )
+            st.plotly_chart(fig_left, use_container_width=True, theme=None)
+        else:
+            st.info("暂无竞对活跃度数据")
 
-    # 🌟 1. 记忆胶囊：初始化状态变量和刷新锁
-    if 'selected_biz' not in st.session_state:
-        st.session_state.selected_biz = None
-    if 'chart_key_counter' not in st.session_state:
-        st.session_state.chart_key_counter = 0
-
+    # =====================================================================
+    # 右侧：热力图 与 下钻柱状图 的平滑切换逻辑
+    # =====================================================================
     with col_chart2:
-        # ==========================================
-        # 状态 A：全局热力大盘
-        # ==========================================
-        if st.session_state.selected_biz is None:
-            st.markdown("**🏷️ 业务焦点热力分布** (🖱️点击色块下钻)")
+        
+        # -----------------------------------------------------------
+        # 状态 A：默认总览状态 (显示业务焦点热力图)
+        # -----------------------------------------------------------
+        if st.session_state.drilldown_keyword is None:
+            # 标题 + 弱提示
+            st.markdown(
+                "**🏷️ 业务焦点热力分布** <span style='font-size:12px; color:#888888; font-weight:normal; margin-left:8px;'>点击关键词查看竞对分布 →</span>", 
+                unsafe_allow_html=True
+            )
             
             biz_df = df['business'].value_counts().reset_index()
             biz_df.columns = ['业务模块', '频次']
             
             if not biz_df.empty:
                 import plotly.express as px
-                fig = px.treemap(
-                    biz_df, path=['业务模块'], values='频次', color='频次', color_continuous_scale='Blues'
+                fig_tree = px.treemap(
+                    biz_df, 
+                    path=['业务模块'], 
+                    values='频次', 
+                    color='频次', 
+                    color_continuous_scale='Blues' # 保持蓝色主题
+                )
+                fig_tree.update_layout(
+                    height=380,  # 与左侧严格对齐
+                    margin=dict(t=10, l=0, r=0, b=0),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)'
+                )
+                fig_tree.update_coloraxes(showscale=False)
+                fig_tree.update_traces(
+                    tiling=dict(pad=0), 
+                    marker=dict(line=dict(color='#FFFFFF', width=2))
                 )
                 
-                # 锁定画板高度：380px
-                fig.update_layout(
-                    height=380, 
-                    margin=dict(t=0, l=0, r=0, b=0),
-                    paper_bgcolor='#FFFFFF',        
-                    plot_bgcolor='#FFFFFF',         
-                )
-                fig.update_coloraxes(showscale=False)
-                fig.update_traces(tiling=dict(pad=0), marker=dict(line=dict(color='white', width=2)))
-                
-                event = st.plotly_chart(
-                    fig, 
+                # 绑定 key 用于捕获点击事件
+                st.plotly_chart(
+                    fig_tree, 
                     use_container_width=True, 
                     theme=None, 
                     on_select="rerun", 
                     selection_mode="points", 
-                    key=f"treemap_{st.session_state.chart_key_counter}" # 动态锁，防卡顿
+                    key="treemap_selection"
                 )
-                
-                if isinstance(event, dict) and "selection" in event:
-                    points = event["selection"].get("points", [])
-                    if points:
-                        st.session_state.selected_biz = points[0].get("label")
-                        st.rerun() # 点击极速翻转
             else:
                 st.info("暂无业务数据构成热力图")
 
-        # ==========================================
-        # 状态 B：极简专属柱状图 (无实体按钮版)
-        # ==========================================
+        # -----------------------------------------------------------
+        # 状态 B：下钻状态 (显示该关键词的竞对分布)
+        # -----------------------------------------------------------
         else:
-            selected = st.session_state.selected_biz
+            keyword = st.session_state.drilldown_keyword
             
-            # 🌟 极简绝招：干掉布局分栏和笨重的按钮！
-            # 采用 tertiary 属性，让按钮失去边框和底色，伪装成一行纯文本标题
-            if st.button(f"🎯 【{selected}】 竞对分布 (🖱️点击图表柱子 或 点击此处返回)", type="tertiary"):
-                st.session_state.selected_biz = None 
-                st.session_state.chart_key_counter += 1
-                st.rerun()
+            # 使用列布局实现轻量级的返回按钮与标题同行
+            c_back, c_title = st.columns([0.25, 0.75])
+            with c_back:
+                # 轻量级返回按钮
+                if st.button("← 返回热力图", use_container_width=True):
+                    st.session_state.drilldown_keyword = None
+                    st.rerun() # 瞬间复原
+            with c_title:
+                st.markdown(
+                    f"<div style='padding-top:4px;'><b>{keyword} · 竞对分布</b> <span style='font-size:12px; color:#888888; font-weight:normal; margin-left:8px;'>关键词关联竞对排行</span></div>", 
+                    unsafe_allow_html=True
+                )
                 
-            sub_df = df[df['business'] == selected]['competitor'].value_counts().reset_index()
+            # 获取当前关键词对应的数据
+            sub_df = df[df['business'] == keyword]['competitor'].value_counts().reset_index()
             sub_df.columns = ['竞对', '数量']
             
             if not sub_df.empty:
+                # 注意：Plotly 的水平柱状图是从下往上画的，所以要升序排列，这样最多的在最上面
+                sub_df = sub_df.sort_values('数量', ascending=True) 
+                
                 import plotly.express as px
-                fig_bar = px.bar(sub_df, x='竞对', y='数量', text='数量')
-                
-                max_val = sub_df['数量'].max()
-                y_max = max_val * 1.25 if max_val > 0 else 1 
-                
-                # 依然锁定 380px 保证和左侧完美齐平
-                fig_bar.update_layout(
-                    height=380,
-                    margin=dict(t=10, l=10, r=10, b=40), # 顶部边距调紧凑，因为没实体按钮了
-                    paper_bgcolor='#9FC5E8', 
-                    plot_bgcolor='#9FC5E8',
-                    xaxis=dict(
-                        showgrid=False, 
-                        title=None, 
-                        tickfont=dict(color='#0B3C6A', size=15, weight='bold')
-                    ),
-                    yaxis=dict(
-                        showgrid=True, 
-                        gridcolor='rgba(255,255,255,0.4)', 
-                        title=None, 
-                        showticklabels=False,
-                        range=[0, y_max] 
-                    )
+                # 核心设计：智能继承颜色。利用 color='数量' 和 color_continuous_scale='Blues'，
+                # 自动根据数值生成深蓝->浅蓝的渐变层次，摒弃杂乱色彩，保持极简商务风。
+                fig_bar_h = px.bar(
+                    sub_df, 
+                    x='数量', 
+                    y='竞对', 
+                    orientation='h', # 水平柱状图
+                    text='数量',
+                    color='数量', 
+                    color_continuous_scale='Blues'
                 )
                 
-                bar_width = 0.3 if len(sub_df) == 1 else 0.5
-                fig_bar.update_traces(
-                    marker_color='#0B3C6A',
+                # 为了与左图 380px 高度完美对齐，需减去上方按钮/标题占据的大约 45px
+                fig_bar_h.update_layout(
+                    height=335, 
+                    margin=dict(t=10, l=10, r=30, b=10),
+                    paper_bgcolor='rgba(0,0,0,0)',
+                    plot_bgcolor='rgba(0,0,0,0)',
+                    xaxis=dict(showgrid=False, showticklabels=False, title=None), # 隐藏X轴，保持干净
+                    yaxis=dict(showgrid=False, title=None, tickfont=dict(color='#333333', size=13, weight='bold'))
+                )
+                fig_bar_h.update_coloraxes(showscale=False) # 隐藏右侧多余的渐变色条
+                
+                # 调整柱子数值标签位置与柱子粗细
+                bar_width = 0.4 if len(sub_df) < 3 else 0.6
+                fig_bar_h.update_traces(
                     textposition='outside', 
-                    textfont=dict(color='#0B3C6A', size=16, weight='bold'),
+                    textfont=dict(size=13, weight='bold', color='#1E88E5'),
                     width=bar_width
                 )
                 
-                # 🌟 核心新交互：让柱状图也开启“可点击捕捉”模式
-                event_bar = st.plotly_chart(
-                    fig_bar, 
-                    use_container_width=True, 
-                    theme=None,
-                    on_select="rerun",
-                    selection_mode="points",
-                    key=f"bar_{st.session_state.chart_key_counter}"
-                )
-                
-                # 如果点中了图表里的任意一根柱子，立刻清空记忆并无缝返回
-                if isinstance(event_bar, dict) and "selection" in event_bar:
-                    bar_points = event_bar["selection"].get("points", [])
-                    if len(bar_points) > 0:
-                        st.session_state.selected_biz = None
-                        st.session_state.chart_key_counter += 1
-                        st.rerun()
+                st.plotly_chart(fig_bar_h, use_container_width=True, theme=None)
             else:
-                st.info("暂无明细数据")
+                st.info(f"暂无【{keyword}】相关的竞对数据")
             
     st.markdown("---")
 
