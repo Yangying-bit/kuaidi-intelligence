@@ -26,7 +26,14 @@ df = load_data()
 
 # 按照时间倒序排列（最新时间排在最上面）
 if not df.empty:
-    df = df.sort_values(by='crawl_timestamp', ascending=False).reset_index(drop=True)
+    # 🌟 修复时间倒置 Bug：用正则强行提取标题里的业务真实日期 (如 2026-02-06)
+    df['real_date'] = df['title'].str.extract(r'(\d{4}-\d{2}-\d{2})')[0]
+    
+    # 如果有的新闻标题没写日期，就用系统的抓取时间兜底
+    df['real_date'] = df['real_date'].fillna(df['crawl_timestamp'].dt.strftime('%Y-%m-%d'))
+    
+    # 双重排序魔法：先按【真实日期】倒序，如果同一天，再按【抓取时间】倒序
+    df = df.sort_values(by=['real_date', 'crawl_timestamp'], ascending=[False, False]).reset_index(drop=True)
 
 st.title("👁️‍🗨️行业竞对情报——DeepSeek驱动分析")
 
