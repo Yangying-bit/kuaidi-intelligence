@@ -86,7 +86,7 @@ else:
         # 状态 A：全局热力大盘
         # ==========================================
         if st.session_state.selected_biz is None:
-            st.markdown("**🏷️ 业务焦点热力分布 (🖱️点击色块进入专场)**")
+            st.markdown("**🏷️ 业务焦点热力分布**")
             
             biz_df = df['business'].value_counts().reset_index()
             biz_df.columns = ['业务模块', '频次']
@@ -144,7 +144,7 @@ else:
                 y_max = max_val * 1.25 if max_val > 0 else 1 
                 
                 fig_bar.update_layout(
-                    height=325,
+                    height=380,
                     margin=dict(t=30, l=10, r=10, b=40), 
                     paper_bgcolor='#9FC5E8', 
                     plot_bgcolor='#9FC5E8',
