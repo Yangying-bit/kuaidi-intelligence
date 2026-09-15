@@ -78,7 +78,7 @@ else:
         # 状态 A：全局热力大盘
         # ==========================================
         if st.session_state.selected_biz is None:
-            st.markdown("**🏷️ 业务焦点热力分布 (🖱️点击色块进入专场)**")
+            st.markdown("**🏷️ 业务焦点热力分布**")
             
             biz_df = df['business'].value_counts().reset_index()
             biz_df.columns = ['业务模块', '频次']
@@ -123,7 +123,7 @@ else:
             # 微型导航栏
             col_title, col_btn = st.columns([0.8, 0.2])
             with col_title:
-                st.markdown(f"🎯 **【{selected}】** 竞对火力分布")
+                st.markdown(f"🎯 **【{selected}】** 竞对分布")
             with col_btn:
                 if st.button("🔙 返回", use_container_width=True):
                     st.session_state.selected_biz = None 
