@@ -60,43 +60,43 @@ else:
     st.markdown("---")
 
     # 🌟 修改点 2：新增数据量化统计图表模块
+    # 🌟 修改点 2：新增数据量化统计图表模块
     st.subheader("描述统计")
     col_chart1, col_chart2 = st.columns(2)
 
     with col_chart1:
         st.markdown("**🎯 竞对活跃度排行 (抓取条数)**")
         comp_counts = df['competitor'].value_counts()
-        st.bar_chart(comp_counts)
+        # 🌟 统一左侧高度：强制设为 380 像素
+        st.bar_chart(comp_counts, height=380)
 
     with col_chart2:
         st.markdown("**🏷️ 业务焦点热力分布 (词块图)**")
-        
-        # 将统计数据转换为 Plotly 需要的格式
         biz_df = df['business'].value_counts().reset_index()
         biz_df.columns = ['业务模块', '频次']
         
         if not biz_df.empty:
             import plotly.express as px
             
-            # 绘制高级矩形树图 (Treemap)
             fig = px.treemap(
                 biz_df, 
                 path=['业务模块'], 
                 values='频次',
                 color='频次',
-                color_continuous_scale='Blues', # 🌟 换成渐变蓝色系，与左侧柱状图和企业UI完美呼应
+                color_continuous_scale='Blues',
             )
             
-            # 🌟 核心UI优化：去除刺眼的黑边，背景设为全透明，隐藏多余的颜色条
+            # 🌟 统一右侧高度并强制透明
             fig.update_layout(
-                margin=dict(t=0, l=0, r=0, b=0),      # 去除四周留白边距
-                paper_bgcolor='rgba(0,0,0,0)',        # 整个图表背景透明
-                plot_bgcolor='rgba(0,0,0,0)',         # 绘图区背景透明
+                height=380,                           # 👈 和左边一模一样的高度
+                margin=dict(t=0, l=0, r=0, b=0),
+                paper_bgcolor='rgba(0,0,0,0)',        # 透明背景
+                plot_bgcolor='rgba(0,0,0,0)',         # 透明背景
             )
-            fig.update_coloraxes(showscale=False)     # 隐藏右侧多余的颜色刻度条，让版面更纯粹
+            fig.update_coloraxes(showscale=False)
             
-            # 使用 st.plotly_chart 渲染，强制使用 streamlit 默认融合主题
-            st.plotly_chart(fig, use_container_width=True, theme="streamlit")
+            # 🌟 核心修复：添加 theme=None，阻止 Streamlit 强制加灰底色！
+            st.plotly_chart(fig, use_container_width=True, theme=None)
         else:
             st.info("暂无业务数据构成热力图")
 
