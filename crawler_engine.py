@@ -233,6 +233,9 @@ def run_crawler():
     # 模块 A：执行竞对官网专属探测任务
     # ==========================================
     official_items = fetch_kdniao_official()
+    
+    official_items.reverse()
+    
     for item in official_items:
         cursor.execute("SELECT id FROM news_v2 WHERE url=?", (item['link'],))
         if cursor.fetchone() is None:
