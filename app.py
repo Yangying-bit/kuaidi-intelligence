@@ -69,9 +69,31 @@ else:
         st.bar_chart(comp_counts)
 
     with col_chart2:
-        st.markdown("**🏷️ 业务焦点分布 (抓取条数)**")
-        biz_counts = df['business'].value_counts()
-        st.bar_chart(biz_counts)
+        st.markdown("**🏷️ 业务焦点热力分布 (词块图)**")
+        
+        # 将统计数据转换为 Plotly 需要的格式
+        biz_df = df['business'].value_counts().reset_index()
+        biz_df.columns = ['业务模块', '频次']
+        
+        if not biz_df.empty:
+            import plotly.express as px
+            
+            # 绘制高级矩形树图 (Treemap)，完美融合词云与热力图特性
+            fig = px.treemap(
+                biz_df, 
+                path=['业务模块'], 
+                values='频次',
+                color='频次',
+                color_continuous_scale='Reds', # 采用红色热力图色系，颜色越深动作越频
+            )
+            
+            # 去除多余边距，让图表在卡片里更饱满
+            fig.update_layout(margin=dict(t=10, l=10, r=10, b=10))
+            
+            # 使用 st.plotly_chart 渲染
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("暂无业务数据构成热力图")
 
     st.markdown("---")
 
