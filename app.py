@@ -78,20 +78,25 @@ else:
         if not biz_df.empty:
             import plotly.express as px
             
-            # 绘制高级矩形树图 (Treemap)，完美融合词云与热力图特性
+            # 绘制高级矩形树图 (Treemap)
             fig = px.treemap(
                 biz_df, 
                 path=['业务模块'], 
                 values='频次',
                 color='频次',
-                color_continuous_scale='Reds', # 采用红色热力图色系，颜色越深动作越频
+                color_continuous_scale='Blues', # 🌟 换成渐变蓝色系，与左侧柱状图和企业UI完美呼应
             )
             
-            # 去除多余边距，让图表在卡片里更饱满
-            fig.update_layout(margin=dict(t=10, l=10, r=10, b=10))
+            # 🌟 核心UI优化：去除刺眼的黑边，背景设为全透明，隐藏多余的颜色条
+            fig.update_layout(
+                margin=dict(t=0, l=0, r=0, b=0),      # 去除四周留白边距
+                paper_bgcolor='rgba(0,0,0,0)',        # 整个图表背景透明
+                plot_bgcolor='rgba(0,0,0,0)',         # 绘图区背景透明
+            )
+            fig.update_coloraxes(showscale=False)     # 隐藏右侧多余的颜色刻度条，让版面更纯粹
             
-            # 使用 st.plotly_chart 渲染
-            st.plotly_chart(fig, use_container_width=True)
+            # 使用 st.plotly_chart 渲染，强制使用 streamlit 默认融合主题
+            st.plotly_chart(fig, use_container_width=True, theme="streamlit")
         else:
             st.info("暂无业务数据构成热力图")
 
