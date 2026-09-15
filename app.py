@@ -70,16 +70,18 @@ else:
         st.bar_chart(comp_counts, height=380)
 
     with col_chart2:
-        st.markdown("**🏷️ 业务焦点热力分布 (词块图)**")
-        biz_df = df['business'].value_counts().reset_index()
-        biz_df.columns = ['业务模块', '频次']
+        st.markdown("**🏷️ 业务焦点热力分布 (💡点击色块可下钻查看竞对)**")
         
-        if not biz_df.empty:
+        if not df.empty:
+            # 🌟 核心升级：使用 groupby 同时统计 [业务模块] 和 [竞对] 的出现频次
+            biz_comp_df = df.groupby(['business', 'competitor']).size().reset_index(name='频次')
+            biz_comp_df.columns = ['业务模块', '竞对', '频次']
+            
             import plotly.express as px
             
             fig = px.treemap(
-                biz_df, 
-                path=['业务模块'], 
+                biz_comp_df, 
+                path=['业务模块', '竞对'],  # 👈 魔法就在这里：把“竞对”作为第二层级嵌套进去
                 values='频次',
                 color='频次',
                 color_continuous_scale='Blues',
@@ -93,13 +95,11 @@ else:
             )
             fig.update_coloraxes(showscale=False)
             
-            # 🌟 真正的终极杀手锏：彻底干掉 Plotly 内部自带的骨架间隙！
             fig.update_traces(
-                tiling=dict(pad=0),           # 👈 核心就在这里！强制间隙归零，灰色连生存空间都没了
+                tiling=dict(pad=0),           
                 marker=dict(line=dict(color='white', width=2)) 
             )
             
-            # 乖乖换回 streamlit 主题，完美融入白底
             st.plotly_chart(fig, use_container_width=True, theme="streamlit")
         else:
             st.info("暂无业务数据构成热力图")
