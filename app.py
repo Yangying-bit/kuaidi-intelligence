@@ -136,20 +136,30 @@ else:
                 import plotly.express as px
                 fig_bar = px.bar(sub_df, x='竞对', y='数量', text='数量')
                 
-                # 🌟 修复文字腰斩问题
+                # 🌟 获取最大值，用来动态计算天花板高度
+                max_val = sub_df['数量'].max()
+                # 防止全是 0 的极端情况报错
+                y_max = max_val * 1.25 if max_val > 0 else 1 
+                
                 fig_bar.update_layout(
                     height=325,
-                    # 把底部边距 (b) 从 10 猛增到 40，让文字完全露出来
-                    margin=dict(t=20, l=10, r=10, b=40), 
+                    # 顶部边距 t 稍微调大一点 (从 20 改到 30)，给数字多留点物理空间
+                    margin=dict(t=30, l=10, r=10, b=40), 
                     paper_bgcolor='#9FC5E8', 
                     plot_bgcolor='#9FC5E8',
                     xaxis=dict(
                         showgrid=False, 
                         title=None, 
-                        # 字体加大加粗，看着更清晰
                         tickfont=dict(color='#0B3C6A', size=15, weight='bold')
                     ),
-                    yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.4)', title=None, showticklabels=False)
+                    yaxis=dict(
+                        showgrid=True, 
+                        gridcolor='rgba(255,255,255,0.4)', 
+                        title=None, 
+                        showticklabels=False,
+                        # 🌟 核心修复：强制设定 Y 轴的范围，永远比最高柱子多 25% 的空间
+                        range=[0, y_max] 
+                    )
                 )
                 
                 # 🌟 解决巨无霸粗柱子问题：智能瘦身
