@@ -85,22 +85,22 @@ else:
                 color_continuous_scale='Blues',
             )
             
-            # 🌟 终极去黑底方案：暴力涂白
             fig.update_layout(
                 height=380,                           
                 margin=dict(t=0, l=0, r=0, b=0),
-                paper_bgcolor='#FFFFFF',      # 放弃透明，强制整个画纸变成纯白色
-                plot_bgcolor='#FFFFFF',       # 强制绘图区变成纯白色
+                paper_bgcolor='rgba(0,0,0,0)',        
+                plot_bgcolor='rgba(0,0,0,0)',         
             )
             fig.update_coloraxes(showscale=False)
             
+            # 🌟 真正的终极杀手锏：彻底干掉 Plotly 内部自带的骨架间隙！
             fig.update_traces(
-                root_color="#FFFFFF",         # 强制垫底的根节点变成纯白色
+                tiling=dict(pad=0),           # 👈 核心就在这里！强制间隙归零，灰色连生存空间都没了
                 marker=dict(line=dict(color='white', width=2)) 
             )
             
-            # 🌟 核心：theme=None 彻底拒绝 Streamlit 的强行干预！
-            st.plotly_chart(fig, use_container_width=True, theme=None)
+            # 乖乖换回 streamlit 主题，完美融入白底
+            st.plotly_chart(fig, use_container_width=True, theme="streamlit")
         else:
             st.info("暂无业务数据构成热力图")
             
