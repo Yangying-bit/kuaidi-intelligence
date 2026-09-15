@@ -60,7 +60,17 @@ else:
     st.markdown("---")
 
     # 🌟 修改点 2：新增数据量化统计图表模块
-    st.markdown("**🏷️ 业务焦点热力分布 (词块图)**")
+    st.subheader("描述统计")
+    col_chart1, col_chart2 = st.columns(2)
+
+    with col_chart1:
+        st.markdown("**🎯 竞对活跃度排行 (抓取条数)**")
+        comp_counts = df['competitor'].value_counts()
+        # 🌟 统一左侧高度：强制设为 380 像素
+        st.bar_chart(comp_counts, height=380)
+
+    with col_chart2:
+        st.markdown("**🏷️ 业务焦点热力分布 (词块图)**")
         biz_df = df['business'].value_counts().reset_index()
         biz_df.columns = ['业务模块', '频次']
         
