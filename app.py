@@ -69,16 +69,16 @@ else:
         # 🌟 统一左侧高度：强制设为 380 像素
         st.bar_chart(comp_counts, height=380)
 
-    # 🌟 1. 记忆胶囊：初始化一个用来记录“当前是否被点击”的状态变量
+    # 🌟 1. 记忆胶囊：初始化状态变量
     if 'selected_biz' not in st.session_state:
         st.session_state.selected_biz = None
 
     with col_chart2:
         # ==========================================
-        # 状态 A：如果没有点击任何色块，展示全局热力大盘
+        # 状态 A：全局热力大盘
         # ==========================================
         if st.session_state.selected_biz is None:
-            st.markdown("**🏷️ 业务焦点热力分布**")
+            st.markdown("**🏷️ 业务焦点热力分布 (🖱️点击色块进入专场)**")
             
             biz_df = df['business'].value_counts().reset_index()
             biz_df.columns = ['业务模块', '频次']
@@ -90,7 +90,7 @@ else:
                 )
                 
                 fig.update_layout(
-                    height=380, # 恢复 380 高度，完美对齐左边
+                    height=380, 
                     margin=dict(t=0, l=0, r=0, b=0),
                     paper_bgcolor='#FFFFFF',        
                     plot_bgcolor='#FFFFFF',         
@@ -98,64 +98,71 @@ else:
                 fig.update_coloraxes(showscale=False)
                 fig.update_traces(tiling=dict(pad=0), marker=dict(line=dict(color='white', width=2)))
                 
-                # 捕获点击事件
                 event = st.plotly_chart(
                     fig, use_container_width=True, theme=None, on_select="rerun", selection_mode="points", key="treemap_chart"
                 )
                 
-                # 如果点中了，把名字存进记忆胶囊，并瞬间刷新页面！
+                # 🌟 治愈卡顿核心：防重复刷新锁
                 if isinstance(event, dict) and "selection" in event:
                     points = event["selection"].get("points", [])
                     if points:
-                        st.session_state.selected_biz = points[0].get("label")
-                        st.rerun() # 强制刷新
+                        new_biz = points[0].get("label")
+                        # 只有当确实点了一个新的色块时，才允许系统刷新
+                        if st.session_state.selected_biz != new_biz:
+                            st.session_state.selected_biz = new_biz
+                            st.rerun() 
             else:
                 st.info("暂无业务数据构成热力图")
 
         # ==========================================
-        # 状态 B：如果点击了色块，原位翻转为带底色的专属柱状图！
+        # 状态 B：原位翻转专属柱状图
         # ==========================================
         else:
             selected = st.session_state.selected_biz
             
-            # 画一个带返回按钮的微型导航栏
+            # 微型导航栏
             col_title, col_btn = st.columns([0.8, 0.2])
             with col_title:
-                st.markdown(f"**🎯 【{selected}】 竞对火力分布**")
+                st.markdown(f"🎯 **【{selected}】** 竞对火力分布")
             with col_btn:
                 if st.button("🔙 返回", use_container_width=True):
-                    st.session_state.selected_biz = None # 清除记忆
-                    st.rerun() # 瞬间变回热力图
+                    st.session_state.selected_biz = None 
+                    st.rerun() 
                     
-            # 获取专门针对这个赛道的数据
             sub_df = df[df['business'] == selected]['competitor'].value_counts().reset_index()
             sub_df.columns = ['竞对', '数量']
             
             if not sub_df.empty:
                 import plotly.express as px
-                
-                # 画出专属柱状图
                 fig_bar = px.bar(sub_df, x='竞对', y='数量', text='数量')
                 
-                # 🌟 核心：高度设为 330 (预留50给上面的返回按钮)，总共还是380
+                # 🌟 修复文字腰斩问题
                 fig_bar.update_layout(
                     height=325,
-                    margin=dict(t=20, l=10, r=10, b=10),
-                    # 🌟 重点匹配你的手绘图：给画板铺上一层高级的浅蓝色背景！
-                    paper_bgcolor='#9FC5E8', # 完美契合原本热力图的底色
+                    # 把底部边距 (b) 从 10 猛增到 40，让文字完全露出来
+                    margin=dict(t=20, l=10, r=10, b=40), 
+                    paper_bgcolor='#9FC5E8', 
                     plot_bgcolor='#9FC5E8',
-                    xaxis=dict(showgrid=False, title=None, tickfont=dict(color='#0B3C6A', weight='bold')),
+                    xaxis=dict(
+                        showgrid=False, 
+                        title=None, 
+                        # 字体加大加粗，看着更清晰
+                        tickfont=dict(color='#0B3C6A', size=15, weight='bold')
+                    ),
                     yaxis=dict(showgrid=True, gridcolor='rgba(255,255,255,0.4)', title=None, showticklabels=False)
                 )
                 
-                # 把柱子涂成深蓝色，与浅蓝底色形成强烈的高级对比
+                # 🌟 解决巨无霸粗柱子问题：智能瘦身
+                # 如果只有 1 家竞对，强制柱子宽度缩减到 0.3；如果有两家以上，宽度设为 0.5
+                bar_width = 0.3 if len(sub_df) == 1 else 0.5
+                
                 fig_bar.update_traces(
                     marker_color='#0B3C6A',
                     textposition='outside', 
-                    textfont=dict(color='#0B3C6A', size=14, weight='bold')
+                    textfont=dict(color='#0B3C6A', size=16, weight='bold'),
+                    width=bar_width  # 强制生效瘦身比例
                 )
                 
-                # 渲染这个全新的背景柱状图
                 st.plotly_chart(fig_bar, use_container_width=True, theme=None)
             else:
                 st.info("暂无明细数据")
