@@ -204,11 +204,18 @@ else:
                 # 为了与左图 380px 高度完美对齐，需减去上方按钮/标题占据的大约 45px
                 fig_bar_h.update_layout(
                     height=335, 
-                    margin=dict(t=10, l=10, r=30, b=10),
+                    # 将 l=10 改为 l=80（或100），给左侧文字留出足够空间
+                    margin=dict(t=10, l=80, r=30, b=10), 
                     paper_bgcolor='rgba(0,0,0,0)',
                     plot_bgcolor='rgba(0,0,0,0)',
-                    xaxis=dict(showgrid=False, showticklabels=False, title=None), # 隐藏X轴，保持干净
-                    yaxis=dict(showgrid=False, title=None, tickfont=dict(color='#333333', size=13, weight='bold'))
+                    xaxis=dict(showgrid=False, showticklabels=False, title=None),
+                    # 新增 automargin=True，让 Plotly 自动计算文本需要的宽度防截断
+                    yaxis=dict(
+                        showgrid=False, 
+                        title=None, 
+                        tickfont=dict(color='#333333', size=13, weight='bold'),
+                        automargin=True 
+                    )
                 )
                 fig_bar_h.update_coloraxes(showscale=False) # 隐藏右侧多余的渐变色条
                 
