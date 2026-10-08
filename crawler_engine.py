@@ -56,7 +56,7 @@ def is_recent_news(pub_time_str):
     try:
         pub_time = datetime.strptime(pub_time_str, "%Y-%m-%d %H:%M:%S")
         now = datetime.utcnow() + timedelta(hours=8)
-        if timedelta(0) <= (now - pub_time) <= timedelta(days=7):
+        if timedelta(0) <= (now - pub_time) <= timedelta(hours=24):
             return True
         return False
     except ValueError:
@@ -312,8 +312,7 @@ if __name__ == "__main__":
     print("=====================================================")
     print("🤖 GitHub Actions 触发：开始执行单次扫描任务")
     print("=====================================================")
-    
-    # 取消无限循环，只执行一次即可退出
+
     try:
         run_crawler()
         print("✅ 本次扫描任务顺利完成，自动退出程序。")
