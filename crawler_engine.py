@@ -56,11 +56,11 @@ def is_recent_news(pub_time_str):
     try:
         pub_time = datetime.strptime(pub_time_str, "%Y-%m-%d %H:%M:%S")
         now = datetime.utcnow() + timedelta(hours=8)
-        if timedelta(0) <= (now - pub_time) <= timedelta(hours=24):
+        if timedelta(0) <= (now - pub_time) <= timedelta(days=7):
             return True
         return False
     except ValueError:
-        recent_keywords = ['刚刚', '分钟', '小时', '今天', '昨天']
+        recent_keywords = ['刚刚', '分钟', '小时', '今天', '昨天','天前']
         if any(keyword in pub_time_str for keyword in recent_keywords):
             return True
         return False
@@ -106,7 +106,7 @@ def fetch_multi_engine(search_term):
     try:
         resp = requests.get(f"https://www.baidu.com/s?rtt=4&bsst=1&cl=2&tn=news&word={encoded_term}", headers=headers, timeout=10)
         soup = BeautifulSoup(resp.text, "html.parser")
-        for item in soup.find_all('h3')[:3]:
+        for item in soup.find_all('h3')[:8]:
             a_tag = item.find('a')
             if a_tag:
                 title = a_tag.text.strip()
@@ -124,9 +124,9 @@ def fetch_multi_engine(search_term):
 
     # 2. 必应新闻
     try:
-        resp = requests.get(f"https://cn.bing.com/news/search?q={encoded_term}&qft=interval%3d%224%22", headers=headers, timeout=10)
+        resp = requests.get(f"https://cn.bing.com/news/search?q={encoded_term}&qft=interval%3d%227%22", headers=headers, timeout=10)
         soup = BeautifulSoup(resp.text, "html.parser")
-        for item in soup.find_all('div', class_='news-card')[:3]:
+        for item in soup.find_all('div', class_='news-card')[:8]:
             a_tag = item.find('a', class_='title')
             if a_tag:
                 title = a_tag.text.strip()
@@ -143,9 +143,9 @@ def fetch_multi_engine(search_term):
     # 3. 搜狗微信
     try:
         # 微信搜索 url 中 tsn=1 表示限制 1 天内
-        resp = requests.get(f"https://weixin.sogou.com/weixin?type=2&query={encoded_term}&tsn=1", headers=headers, timeout=10)
+        resp = requests.get(f"https://weixin.sogou.com/weixin?type=2&query={encoded_term}&tsn=2", headers=headers, timeout=10)
         soup = BeautifulSoup(resp.text, "html.parser")
-        for item in soup.find_all('div', class_='txt-box')[:3]:
+        for item in soup.find_all('div', class_='txt-box')[:8]:
             a_tag = item.find('h3').find('a')
             if a_tag:
                 title = a_tag.text.strip()
@@ -309,23 +309,14 @@ def run_crawler():
 if __name__ == "__main__":
     init_db()
     
-    # 🌟 核心升级：设定时间间隔（2 小时 = 7200 秒）
-    INTERVAL_SECONDS = 2 * 60 * 60 
-    
     print("=====================================================")
-    print("🤖 自动雷达已开启，程序将每隔 2 小时在后台默默侦测一次")
+    print("🤖 GitHub Actions 触发：开始执行单次扫描任务")
     print("=====================================================")
     
-    # 无限循环执行
-    while True:
-        try:
-            run_crawler()
-            print(f"⏳ 本轮扫描完成。系统进入待机休眠，下次扫描在 2 小时后...")
-        except Exception as e:
-            print(f"❌ 运行过程中发生全局崩溃: {e}")
-            print("⏳ 系统将在 10 分钟后重试...")
-            time.sleep(600)  # 崩溃后短休眠重试，防止程序直接闪退
-            continue
-            
-        time.sleep(INTERVAL_SECONDS)
+    # 取消无限循环，只执行一次即可退出
+    try:
+        run_crawler()
+        print("✅ 本次扫描任务顺利完成，自动退出程序。")
+    except Exception as e:
+        print(f"❌ 运行过程中发生全局崩溃: {e}")
 
