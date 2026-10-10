@@ -291,33 +291,58 @@ else:
     # ==========================================
     # 🌟 核心修改区：Tabs 标签页布局
     # ==========================================
-    st.markdown("### 📡 实时情报")
+    st.markdown("### 📡 情报大盘视图")
     
+    # 核心：将所有公司划分为两大商业阵营
+    TECH_PLATFORMS = ["快递鸟", "菜鸟"]
+    
+    # 获取受过滤器影响的数据，并智能分配到两大阵营中
     if not filtered_df.empty:
-        # 数据分离：划分为“快递鸟”和“其他竞对”
-        kdniao_df = filtered_df[filtered_df['competitor'] == '快递鸟']
-        other_df = filtered_df[filtered_df['competitor'] != '快递鸟']
-
-        # 构建并排的标签页
-        tab1, tab2 = st.tabs([
-            f"🦅 快递鸟相关情报 ({len(kdniao_df)} 条)", 
-            f"🌐 行业综合情报 ({len(other_df)} 条)"
-        ])
-
-        # 渲染快递鸟专属板块
-        with tab1:
-            if kdniao_df.empty:
-                st.info("在当前筛选条件下，暂无快递鸟的情报。")
-            else:
-                for index, row in kdniao_df.iterrows():
-                    render_news_card(row)
-
-        # 渲染其他竞对综合板块
-        with tab2:
-            if other_df.empty:
-                st.info("在当前筛选条件下，暂无其他同行的情报。")
-            else:
-                for index, row in other_df.iterrows():
-                    render_news_card(row)
+        tech_df = filtered_df[filtered_df['competitor'].isin(TECH_PLATFORMS)]
+        logistics_df = filtered_df[~filtered_df['competitor'].isin(TECH_PLATFORMS)]
     else:
-        st.warning("当前筛选条件下无数据，请尝试调整上方的日期或影响程度过滤器。")
+        tech_df = pd.DataFrame()
+        logistics_df = pd.DataFrame()
+
+    # 构建全新的 3 个标签页
+    tab1, tab2, tab3 = st.tabs([
+        f"🦅 聚合与技术平台情报 ({len(tech_df)} 条)", 
+        f"📦 实体快递巨头情报 ({len(logistics_df)} 条)",
+        "📅 近七天情报全景复盘"
+    ])
+
+    # --- 渲染 Tab 1 (菜鸟/快递鸟) ---
+    with tab1:
+        if tech_df.empty:
+            st.info("当前筛选条件下，暂无 菜鸟/快递鸟 等聚合技术平台的情报。")
+        else:
+            for index, row in tech_df.iterrows():
+                render_news_card(row)
+
+    # --- 渲染 Tab 2 (顺丰/京东/三通一达等) ---
+    with tab2:
+        if logistics_df.empty:
+            st.info("当前筛选条件下，暂无 顺丰/京东/三通一达 等实体快递巨头的情报。")
+        else:
+            for index, row in logistics_df.iterrows():
+                render_news_card(row)
+
+    # --- 渲染 Tab 3 (七天无视过滤的瀑布流) ---
+    with tab3:
+        st.markdown("<span style='color:#888; font-size:14px;'>此处展示全网过去7天的全量情报，不受上方过滤条件限制。</span>", unsafe_allow_html=True)
+        st.write("") 
+        
+        seven_days_ago = (datetime.now() - timedelta(days=7)).strftime('%Y-%m-%d')
+        recent_7d_df = df[df['real_date'] >= seven_days_ago]
+        
+        if recent_7d_df.empty:
+            st.info("📭 过去七天暂无情报数据。")
+        else:
+            grouped = recent_7d_df.groupby('real_date')
+            sorted_groups = sorted(grouped, key=lambda x: x[0], reverse=True)
+            
+            for i, (date_str, group) in enumerate(sorted_groups):
+                is_expanded = (i == 0) 
+                with st.expander(f"🗓️ 【{date_str}】 行业动态汇总 (共 {len(group)} 条)", expanded=is_expanded):
+                    for _, row in group.iterrows():
+                        render_news_card(row)
