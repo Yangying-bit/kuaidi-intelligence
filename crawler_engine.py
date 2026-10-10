@@ -249,7 +249,7 @@ def run_crawler():
         "https://www.kdniao.com/message",     # 最新资讯
         "https://www.kdniao.com/message/category/11",  # 物流知识
         "https://www.kdniao.com/doc", # 文档中心
-        "https://www.kdniao.com/" # 官网]
+        "https://www.kdniao.com/"]
         },
         {
             "name": "菜鸟",
@@ -257,7 +257,7 @@ def run_crawler():
             "urls": ["https://open.cainiao.com/",           # 菜鸟开放平台
         "https://open.cainiao.com/express",         # 无忧物流
         "https://www.cainiao.com/about-us-news-and-announcement.html",     # 行业新闻
-        "https://www.cainiao.com/technology.html?spm=a2d524.28499007.footer.6.65e54a226b7Qwc" # 物流科技]
+        "https://www.cainiao.com/technology.html?spm=a2d524.28499007.footer.6.65e54a226b7Qwc"]
         },
         {
             "name": "顺丰",
@@ -265,14 +265,14 @@ def run_crawler():
             "urls": ["https://open.cainiao.com/",           # 顺丰开放平台
         "https://open.sf-express.com/customerService/899827",         # 平台公告
         "https://www.sf-express.com/chn/sc",     # 官网
-        "https://open.sf-express.com/customerService/commonfaq?activeIndex=faq0" # 常见问题]
+        "https://open.sf-express.com/customerService/commonfaq?activeIndex=faq0"]   # 常见问题
         },
         {
             "name": "京东物流",
             "base": "https://www.jdwl.com",
             "urls": ["https://www.jdwl.com/", "https://open.jdwl.com/",
                     "https://www.jdl.com/news/list",  #行业资讯
-                    "https://www.jdl.com/" #官网]
+                    "https://www.jdl.com/" ]  #官网
         },
         {
             "name": "德邦快递",
@@ -280,7 +280,7 @@ def run_crawler():
             "urls": ["https://dpopen.deppon.com/",
                     "https://www.deppon.com/newsInfo?source=header&menu=NEWS",  #新闻中心
                      "https://www.deppon.com/newsInfo?source=header&menu=NOTICE","https://dpopen.deppon.com/#/newsCenter/newsCenterList",  #公司公告
-                    "https://www.jdl.com/" #官网]
+                    "https://www.jdl.com/"]  #官网
         },
         {
             "name": "申通", 
@@ -307,7 +307,7 @@ def run_crawler():
             "name": "韵达", 
             "base": "",
             "urls": [
-                "https://open.yundasys.com/", "https://www.yundaex.com/",
+                "https://open.yundaex.com/", "https://www.yundaex.com/",
                 "https://www.yundaex.com/cn/news.php?class=1","https://www.yundaex.com/cn/news.php","https://www.yundaex.com/cn/news.php?class=4","http://yundaex.com/cn/news.php?class=2","https://www.yundaex.com/cn/news.php?class=3" #新闻动态
             ]
         }
