@@ -288,6 +288,14 @@ def run_crawler():
                     "https://www.jdl.com/",  #官网]
         },
         {
+            "name": "德邦快递",
+            "base": "https://www.deppon.com",
+            "urls": ["https://dpopen.deppon.com/",
+                    "https://www.deppon.com/newsInfo?source=header&menu=NEWS",  #新闻中心
+                     "https://www.deppon.com/newsInfo?source=header&menu=NOTICE","https://dpopen.deppon.com/#/newsCenter/newsCenterList",  #公司公告
+                    "https://www.jdl.com/",  #官网]
+        },
+        {
             "name": "三通一达", # 聚合扫码
             "base": "",
             "urls": [
