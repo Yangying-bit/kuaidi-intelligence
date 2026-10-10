@@ -207,19 +207,6 @@ def fetch_official_sites(competitor_name, target_urls, base_domain):
     print(f" ✅ {competitor_name} 探测完成，共捕获 {len(unique_results[:20])} 条动态")
     return unique_results[:20]
 
-    
-    # 🌟 核心升级：把单点变成了“网址监控池”
-    # 你可以随时把在快递鸟官网上发现的各种“更新页面”网址加到这里面
-    target_urls = [
-        "https://www.kdniao.com/message/category/239",           # 公司新闻动态页
-        "https://www.kdniao.com/message/category/80",         # 行业资讯
-        "https://www.kdniao.com/message",     # 最新资讯
-        "https://www.kdniao.com/message/category/11",  # 物流知识
-        "https://www.kdniao.com/doc", # 文档中心
-        "https://www.kdniao.com/" # 官网
-    ]
-    
-    print(f"\n🦅 开始潜入快递鸟官网，共布控 {len(target_urls)} 个关键阵地...")
 
 
 def run_crawler():
@@ -270,7 +257,7 @@ def run_crawler():
             "urls": ["https://open.cainiao.com/",           # 菜鸟开放平台
         "https://open.cainiao.com/express",         # 无忧物流
         "https://www.cainiao.com/about-us-news-and-announcement.html",     # 行业新闻
-        "https://www.cainiao.com/technology.html?spm=a2d524.28499007.footer.6.65e54a226b7Qwc",  # 物流科技]
+        "https://www.cainiao.com/technology.html?spm=a2d524.28499007.footer.6.65e54a226b7Qwc" # 物流科技]
         },
         {
             "name": "顺丰",
@@ -278,14 +265,14 @@ def run_crawler():
             "urls": ["https://open.cainiao.com/",           # 顺丰开放平台
         "https://open.sf-express.com/customerService/899827",         # 平台公告
         "https://www.sf-express.com/chn/sc",     # 官网
-        "https://open.sf-express.com/customerService/commonfaq?activeIndex=faq0",  # 常见问题]
+        "https://open.sf-express.com/customerService/commonfaq?activeIndex=faq0" # 常见问题]
         },
         {
             "name": "京东物流",
             "base": "https://www.jdwl.com",
             "urls": ["https://www.jdwl.com/", "https://open.jdwl.com/",
                     "https://www.jdl.com/news/list",  #行业资讯
-                    "https://www.jdl.com/",  #官网]
+                    "https://www.jdl.com/" #官网]
         },
         {
             "name": "德邦快递",
@@ -293,16 +280,35 @@ def run_crawler():
             "urls": ["https://dpopen.deppon.com/",
                     "https://www.deppon.com/newsInfo?source=header&menu=NEWS",  #新闻中心
                      "https://www.deppon.com/newsInfo?source=header&menu=NOTICE","https://dpopen.deppon.com/#/newsCenter/newsCenterList",  #公司公告
-                    "https://www.jdl.com/",  #官网]
+                    "https://www.jdl.com/" #官网]
         },
         {
-            "name": "三通一达", # 聚合扫码
+            "name": "申通", 
+            "base": "https://open.sto.cn/",
+            "urls": ["https://open.sto.cn/","https://www.sto.cn/pc/about?index=3" #新闻动态
+            ]
+        },
+        {
+            "name": "中通", 
+            "base": "https://open.zto.com/",
+            "urls": [
+                "https://open.zto.com/", "https://www.zto.com/introduce/about/news?choiceId=0", #新闻动态
+                "https://www.zto.com/investor/log?type=upcoming", #投资者日志
+                "https://www.zto.com/"  #官网
+            ]
+        },{
+            "name": "圆通", 
+            "base": "https://www.yto.net.cn/",
+            "urls": [ 
+                "https://open.yto.net.cn/", "https://www.yto.net.cn/",
+                "https://www.yto.net.cn/aboutYto/latestAnnouncement","https://www.yto.net.cn/ytoNews/newsList", #新闻动态
+            ]
+        },{
+            "name": "韵达", 
             "base": "",
             "urls": [
-                "https://open.zto.com/", "https://www.zto.com/", 
-                "https://open.yto.net.cn/", "https://www.yto.net.cn/",
                 "https://open.yundasys.com/", "https://www.yundaex.com/",
-                "https://open.sto.cn/"
+                "https://www.yundaex.com/cn/news.php?class=1","https://www.yundaex.com/cn/news.php","https://www.yundaex.com/cn/news.php?class=4","http://yundaex.com/cn/news.php?class=2","https://www.yundaex.com/cn/news.php?class=3" #新闻动态
             ]
         }
     ]
