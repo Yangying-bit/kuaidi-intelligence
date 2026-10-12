@@ -20,7 +20,20 @@ def load_data():
     if not df.empty:
         df['crawl_timestamp'] = pd.to_datetime(df['crawl_timestamp'])
     return df
-
+    
+# 🌟 新增：数据库删除逻辑
+def delete_news(record_id):
+    """从数据库中永久删除指定ID的情报，并刷新页面"""
+    conn = sqlite3.connect(db_path)
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM news_v2 WHERE id = ?", (record_id,))
+    conn.commit()
+    conn.close()
+    
+    # 清空 Streamlit 的数据缓存，强制下一次加载最新数据库
+    load_data.clear()
+    # 瞬间重新运行网页，实现无缝刷新
+    st.rerun()
 
 df = load_data()
 
@@ -267,11 +280,12 @@ else:
         filtered_df = pd.DataFrame()
 
     # ==========================================
-    # 🌟 核心修改区：封装卡片渲染函数
+    # 🌟 卡片渲染函数 (已加入删除功能)
     # ==========================================
     def render_news_card(row):
-        """将单条新闻渲染为 UI 卡片"""
         score = row.get('ai_score', 0)
+        record_id = row['id']  # 获取数据库主键 ID
+        
         if score >= 8:
             status = "🔴 重大影响"
         elif score >= 5:
@@ -280,8 +294,17 @@ else:
             status = "🟢 影响较小"
 
         with st.container(border=True):
-            st.markdown(f"**【{row['competitor']} - {row['business']}】** [{row['title']}]({row['url']})")
-            st.caption(f"发现时间: {row['publish_time']} | 影响评估: {status} ({score}/10)")
+            # 将标题区域分为左右两列，右侧放删除按钮
+            c_title, c_action = st.columns([0.85, 0.15])
+            
+            with c_title:
+                st.markdown(f"**【{row['competitor']} - {row['business']}】** [{row['title']}]({row['url']})")
+                st.caption(f"发现时间: {row['publish_time']} | 影响评估: {status} ({score}/10)")
+                
+            with c_action:
+                # 每个删除按钮必须拥有独一无二的 key，否则 Streamlit 会报错
+                if st.button("🗑️ 删除", key=f"del_{record_id}", help="永久从情报库中移除此条数据"):
+                    delete_news(record_id)
 
             with st.expander("查看 DeepSeek 深度分析与应对策略"):
                 st.markdown(f"**AI资讯总结：** {row['snippet']}")
