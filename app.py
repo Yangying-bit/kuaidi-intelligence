@@ -282,9 +282,9 @@ else:
     # ==========================================
     # 🌟 卡片渲染函数 (已加入删除功能)
     # ==========================================
-    def render_news_card(row):
+    def render_news_card(row, tab_prefix=""):
         score = row.get('ai_score', 0)
-        record_id = row['id']  # 获取数据库主键 ID
+        record_id = row['id']  
         
         if score >= 8:
             status = "🔴 重大影响"
@@ -294,7 +294,6 @@ else:
             status = "🟢 影响较小"
 
         with st.container(border=True):
-            # 将标题区域分为左右两列，右侧放删除按钮
             c_title, c_action = st.columns([0.85, 0.15])
             
             with c_title:
@@ -302,8 +301,8 @@ else:
                 st.caption(f"发现时间: {row['publish_time']} | 影响评估: {status} ({score}/10)")
                 
             with c_action:
-                # 每个删除按钮必须拥有独一无二的 key，否则 Streamlit 会报错
-                if st.button("🗑️ 删除", key=f"del_{record_id}", help="永久从情报库中移除此条数据"):
+                # 🌟 核心修复：在 key 里加上 tab_prefix，确保全局唯一
+                if st.button("🗑️ 删除", key=f"del_{record_id}_{tab_prefix}", help="永久从情报库中移除此条数据"):
                     delete_news(record_id)
 
             with st.expander("查看 DeepSeek 深度分析与应对策略"):
@@ -340,7 +339,8 @@ else:
             st.info("当前筛选条件下，暂无 菜鸟/快递鸟 等聚合技术平台的情报。")
         else:
             for index, row in tech_df.iterrows():
-                render_news_card(row)
+                # 加上 tab1 前缀
+                render_news_card(row, tab_prefix="tab1")
 
     # --- 渲染 Tab 2 (顺丰/京东/三通一达等) ---
     with tab2:
@@ -348,7 +348,8 @@ else:
             st.info("当前筛选条件下，暂无 顺丰/京东/三通一达 等实体快递巨头的情报。")
         else:
             for index, row in logistics_df.iterrows():
-                render_news_card(row)
+                # 加上 tab2 前缀
+                render_news_card(row, tab_prefix="tab2")
 
     # --- 渲染 Tab 3 (七天无视过滤的瀑布流) ---
     with tab3:
@@ -368,4 +369,5 @@ else:
                 is_expanded = (i == 0) 
                 with st.expander(f"🗓️ 【{date_str}】 行业动态汇总 (共 {len(group)} 条)", expanded=is_expanded):
                     for _, row in group.iterrows():
-                        render_news_card(row)
+                        # 加上 tab3 前缀
+                        render_news_card(row, tab_prefix="tab3")
