@@ -79,23 +79,31 @@ def clean_text_for_markdown(text):
     text = text.replace('[', '【').replace(']', '】')  # 防止破坏 markdown 超链接格式
     return text[:200]
 
-def analyze_with_deepseek(competitor, title, snippet):
+
+    def analyze_with_deepseek(competitor, title, snippet):
     """调用 DeepSeek 接口，进行深度业务情报分析"""
     prompt = f"""
-    你是一个资深的物流行业商业情报分析师。请阅读以下竞对动态，并评估其对【快递100】业务的潜在威胁或机会。
-    重点评估领域：寄件服务接口、上门取件API、企业快递管理SaaS、智选运力、同城急送、寄大件、国际寄件、线上支付、线下支付、商家寄件
-    请敏锐捕捉：竞对在API接口升级、快递公司单价降价、企业大客户案例、价格补贴战、新接口发布、新解决方案发布等方面的动作。
+    你是一个资深且冷酷的物流行业商业情报分析师，专门为【快递100】公司服务。
+    
+    【核心任务】
+    下面是一条关于竞对【{competitor}】的动态。请你阅读并评估其对【快递100】业务的潜在威胁、打击或机会。
+    
+    【强制规则 - 极度重要】
+    1. 你必须死死盯住【{competitor}】的主体动作！哪怕文章里提到了快递100，你也绝不能把快递100当成新闻的主角去分析。
+    2. 如果这篇新闻纯粹只是快递100自己的公关稿/企业文化，或者是毫无商业价值的废话（如中奖名单、放假通知），请直接在打分栏给 0 分，总结栏写“无效情报”。
+    3. 重点评估：API接口升级、单价降价、大客户争夺、价格补贴战、新接口发布等。
 
-    监控目标: {competitor}
+    监控目标竞对: {competitor}
     动态标题: {title}
     内容摘要: {snippet}
 
     请严格以 JSON 格式输出，必须且只能包含以下四个字段：
-    1. "summary": AI资讯总结 (对内容摘要进行准确无误的提炼总结，消除网页乱码或冗余字眼，50字以内，语言精练)。
-    2. "score": 影响程度打分 (整数，1-10分。1-4分为常规动态，5-7分为值得警惕，8-10分为严重威胁或重大商机)。
-    3. "analysis": 简要分析竞对此举会如何影响我们的客户获客、激活、留存、API调用毛利或市场份额（100字以内，语义到位）。
-    4. "suggestion": 给业务团队的实操建议（言简意赅，给出精细到具体动作的建议。例如降价应对、推出新方案或跟进新功能等）。
+    1. "summary": AI资讯总结 (提炼该竞对的具体动作，消除网页乱码，50字以内，语言精练)。
+    2. "score": 影响程度打分 (整数，1-10分。1-3分常规动作，4-7分值得警惕可能抢走小客户，8-10分严重威胁或直接对标快递100核心业务。无效情报填0)。
+    3. "analysis": 简要分析该竞对的这个动作，会如何抢走快递100的客户、影响API调用量或SaaS份额（一针见血，100字以内）。
+    4. "suggestion": 给快递100业务团队的实操应对建议（如降价、推新方案、打广告反击等）。
     """
+    
     try:
         response = client.chat.completions.create(
             model="deepseek-chat",
@@ -271,7 +279,16 @@ def run_crawler():
                 if not is_recent_news(item['time']):
                     continue
 
-                if item['link'] and item['link'].startswith("http") and "快递100" not in item['title']:
+                # 物理拦截网：只要标题或摘要里大篇幅提到"快递100"，极大概率是自家软文，直接丢弃
+                if item['link'] and item['link'].startswith("http"):
+                    if "快递100" in item['title'] or "快递100" in item['snippet'][:30]:
+                        continue # 发现自家名字，直接放弃这条数据
+                    
+                    cursor.execute("SELECT id FROM news_v2 WHERE url=?", (item['link'],))
+                    if cursor.fetchone() is None:
+                        # （接下来的代码保持不变）
+
+                        
                     cursor.execute("SELECT id FROM news_v2 WHERE url=?", (item['link'],))
                     if cursor.fetchone() is None:
                         print(f"👉 [{item['source']}] 捕获新情报: [{comp} - {kw}] {item['title'][:15]}... 交给AI分析")
