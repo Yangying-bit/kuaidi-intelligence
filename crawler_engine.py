@@ -80,7 +80,7 @@ def clean_text_for_markdown(text):
     return text[:200]
 
 
-    def analyze_with_deepseek(competitor, title, snippet):
+def analyze_with_deepseek(competitor, title, snippet):
     """调用 DeepSeek 接口，进行深度业务情报分析"""
     prompt = f"""
     你是一个资深且冷酷的物流行业商业情报分析师，专门为【快递100】公司服务。
