@@ -61,12 +61,11 @@ def is_recent_news(pub_time_str):
         recent_keywords = ['刚刚', '分钟', '小时', '今天', '昨天', '天前']
         if any(keyword in pub_time_str for keyword in recent_keywords):
             return True
-        # 处理部分引擎只返回如 "2026-10-01" 格式的短日期
         if len(pub_time_str) == 10 and pub_time_str.count('-') == 2:
             try:
                 pub_time = datetime.strptime(pub_time_str, "%Y-%m-%d")
                 now = datetime.now()
-                if timedelta(0) <= (now - pub_time) <= timedelta(hours=24):
+                if timedelta(0) <= (now - pub_time) <= timedelta(days=7):
                     return True
             except: pass
         return False
@@ -78,7 +77,6 @@ def clean_text_for_markdown(text):
     text = text.replace('\n', ' ').replace('\r', '').strip()
     text = text.replace('[', '【').replace(']', '】')  # 防止破坏 markdown 超链接格式
     return text[:200]
-
 
 def analyze_with_deepseek(competitor, title, snippet):
     """调用 DeepSeek 接口，进行深度业务情报分析"""
@@ -116,7 +114,6 @@ def analyze_with_deepseek(competitor, title, snippet):
         print(f"⚠️ AI 分析遭遇波动: {e}")
         return snippet, 0, "AI分析暂时失败，稍后重试", "无"
 
-
 def fetch_multi_engine(search_term):
     """核心抓取引擎：三合一全网搜刮 (百度 + 必应 + 搜狗微信) - 已加入高级防封禁"""
     results = []
@@ -148,9 +145,7 @@ def fetch_multi_engine(search_term):
                     snippet = parent_div.text.strip().replace(title, '')[:150] if parent_div else title
                     snippet = clean_text_for_markdown(snippet)
                     results.append({"title": title, "link": link, "time": pub_time, "snippet": snippet, "source": "百度"})
-    except requests.exceptions.Timeout:
-        pass
-    except Exception as e:
+    except Exception:
         pass
 
     # 2. 必应新闻
@@ -168,9 +163,7 @@ def fetch_multi_engine(search_term):
                 snippet = snippet_tag.text.strip() if snippet_tag else title
                 snippet = clean_text_for_markdown(snippet)
                 results.append({"title": title, "link": link, "time": pub_time, "snippet": snippet, "source": "必应"})
-    except requests.exceptions.Timeout:
-        pass
-    except Exception as e:
+    except Exception:
         pass
 
     # 3. 搜狗微信
@@ -187,18 +180,14 @@ def fetch_multi_engine(search_term):
                 snippet = snippet_tag.text.strip() if snippet_tag else title
                 snippet = clean_text_for_markdown(snippet)
                 results.append({"title": title, "link": link, "time": "今天", "snippet": snippet, "source": "微信公众号"})
-    except requests.exceptions.Timeout:
-        pass
-    except Exception as e:
+    except Exception:
         pass
 
     return results
 
-
 def run_crawler():
     """主控调度逻辑"""
 
-    # 🌟 终极升级：同时绑定“官网域名”与“官方微信公众号名称”
     COMPETITOR_INFO = {
         "菜鸟": {"domain": "cainiao.com", "wechat": "菜鸟网络"},
         "快递鸟": {"domain": "kdniao.com", "wechat": "快递鸟"},
@@ -214,7 +203,7 @@ def run_crawler():
     
     COMPETITORS = list(COMPETITOR_INFO.keys()) + ["京东快递", "邮政"]
     
-    SCENARIOS = ["同城急送", "同城配送", "同城急送","上门取件", "国际寄件", "大件快运", "寄大件","免开发寄件组件","寄件组件"]
+    SCENARIOS = ["同城急送", "同城配送", "上门取件", "国际寄件", "大件快运", "寄大件", "免开发寄件组件", "寄件组件"]
     API_SYNONYMS = ["API", "接口", "对接", "开放平台"]
     INDEPENDENT_WORDS = [
         "电商退货","多地址发货","二手闲置交易","开放平台 寄件", "商家发货",
@@ -239,11 +228,10 @@ def run_crawler():
         domain = info["domain"]
         wechat = info["wechat"]
         
-        # 前两个给百度/必应查官网，后一个专门给微信引擎查公众号文章！
         official_queries = [
             f"site:{domain} 接口 OR 开放平台 OR 服务",
             f"site:{domain} 新闻 OR 公告 OR 动态",
-            f"{wechat} 接口 OR 新功能 OR 发布" # 🌟 新增：没有 site:，微信引擎能完美抓取官方公众号推文
+            f"{wechat} 接口 OR 新功能 OR 发布"
         ]
         
         for q in official_queries:
@@ -264,9 +252,8 @@ def run_crawler():
                     conn.commit()
             time.sleep(random.uniform(2.0, 4.0))
 
-
     # ==========================================
-    # 模块 B：执行全网舆情多引擎搜索循环 (含微信生态舆情)
+    # 模块 B：执行全网舆情多引擎搜索循环
     # ==========================================
     print("\n🌐 开始全网舆情多引擎矩阵扫描...")
     for comp in COMPETITORS:
@@ -279,16 +266,11 @@ def run_crawler():
                 if not is_recent_news(item['time']):
                     continue
 
-                # 物理拦截网：只要标题或摘要里大篇幅提到"快递100"，极大概率是自家软文，直接丢弃
                 if item['link'] and item['link'].startswith("http"):
+                    # 物理拦截网：只要标题或摘要里大篇幅提到"快递100"，极大概率是自家软文，直接丢弃
                     if "快递100" in item['title'] or "快递100" in item['snippet'][:30]:
-                        continue # 发现自家名字，直接放弃这条数据
+                        continue 
                     
-                    cursor.execute("SELECT id FROM news_v2 WHERE url=?", (item['link'],))
-                    if cursor.fetchone() is None:
-                        # （接下来的代码保持不变）
-
-                        
                     cursor.execute("SELECT id FROM news_v2 WHERE url=?", (item['link'],))
                     if cursor.fetchone() is None:
                         print(f"👉 [{item['source']}] 捕获新情报: [{comp} - {kw}] {item['title'][:15]}... 交给AI分析")
