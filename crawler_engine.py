@@ -116,6 +116,7 @@ def analyze_with_deepseek(competitor, title, snippet):
         print(f"⚠️ AI 分析遭遇波动: {e}")
         return snippet, 0, "AI分析暂时失败，稍后重试", "无"
 
+
 def fetch_multi_engine(search_term):
     """核心抓取引擎：三合一全网搜刮 (百度 + 必应 + 搜狗微信) - 已加入高级防封禁"""
     results = []
