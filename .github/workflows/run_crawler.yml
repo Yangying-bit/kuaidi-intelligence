@@ -1,40 +1,70 @@
+
 name: 快递情报自动抓取与AI分析
 
 on:
   schedule:
-    # 这代表每隔 2 小时，在第 17 分钟的时候去排队，比如 03:17、06:17、09:17，能极大减少延迟时间
+    # 中国标准时间：每隔 2 小时，在第 17 分钟触发
     - cron: '17 */2 * * *'
-  workflow_dispatch: # 允许你随时在网页上手动点一下立刻运行
+      timezone: 'Asia/Shanghai'
+  workflow_dispatch:
+
+# 明确允许工作流提交数据库文件
+permissions:
+  contents: write
+
+# 避免两个抓取任务同时读写同一份 SQLite 数据库
+concurrency:
+  group: news-crawler-database
+  cancel-in-progress: false
+  queue: max
 
 jobs:
   run-crawler:
     runs-on: ubuntu-latest
-    
+
     steps:
-    - name: 检出代码
-      uses: actions/checkout@v4
+      - name: 检出代码
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
-    - name: 配置 Python 环境
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.10'
+      - name: 配置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
 
-    - name: 安装依赖包
-      run: |
-        pip install --upgrade pip
-        pip install -r requirements.txt
+      - name: 安装依赖包
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-    - name: 运行爬虫与AI分析引擎
-      env:
-        DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }} # 自动从你的保险箱提取 Key
-      run: python crawler_engine.py
+      - name: 运行爬虫与 AI 分析引擎
+        env:
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+        run: python crawler_engine.py
 
-    - name: 自动保存数据库更新到云端
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add intelligence.db || true
-        git commit -m "auto: 更新最新情报数据库 [skip ci]" || true
-        git push || true
+      # 即使爬虫中途失败，也尝试保存已经写入的数据库变更
+      - name: 保存数据库变更到 GitHub
+        if: always()
+        run: |
+          if [ ! -f intelligence.db ]; then
+            echo "::error::找不到 intelligence.db，请检查数据库生成路径。"
+            exit 1
+          fi
+
+          git ls-files --error-unmatch intelligence.db > /dev/null || {
+            echo "::error::intelligence.db 尚未被 Git 跟踪，请检查仓库中的数据库文件。"
+            exit 1
+          }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git add -- intelligence.db
+
+          if git diff --cached --quiet; then
+            echo "数据库没有变化，无需提交。"
+          else
+            git commit -m "auto: 更新最新情报数据库"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
