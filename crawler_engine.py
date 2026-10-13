@@ -66,7 +66,7 @@ def is_recent_news(pub_time_str):
             try:
                 pub_time = datetime.strptime(pub_time_str, "%Y-%m-%d")
                 now = datetime.now()
-                if timedelta(0) <= (now - pub_time) <= timedelta(days=7):
+                if timedelta(0) <= (now - pub_time) <= timedelta(hours=24):
                     return True
             except: pass
         return False
