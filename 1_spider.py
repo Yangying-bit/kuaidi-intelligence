@@ -109,15 +109,15 @@ def fetch_broad_rss(comp, keywords):
 def run_spider():
     # 核心竞对及官方域名矩阵
     OFFICIAL_DOMAINS = {
-        "顺丰": "sf-express.com","open.sf-express.com",
-        "菜鸟": "cainiao.com","open.cainiao.com",
-        "京东物流": "jdwl.com","open.jdl.com",
-        "中通": "zto.com","open.zto.cn",
-        "快递鸟": "kdniao.com",
-        "申通": "sto.cn","open.sto.cn",
-        "韵达": "yundaex.com","open.yundaex.com",
-        "圆通": "yto.net.cn","open.yto.net.cn",
-        "极兔": "jtexpress.cn","open.jtexpress.cn"
+        "顺丰":"sf-express.com","open.sf-express.com",
+        "菜鸟":"cainiao.com","open.cainiao.com",
+        "京东物流":"jdwl.com","open.jdl.com",
+        "中通":"zto.com","open.zto.cn",
+        "快递鸟":"kdniao.com",
+        "申通":"sto.cn","open.sto.cn",
+        "韵达":"yundaex.com","open.yundaex.com",
+        "圆通":"yto.net.cn","open.yto.net.cn",
+        "极兔":"jtexpress.cn","open.jtexpress.cn"
     }
     
     BROAD_COMPETITORS = list(OFFICIAL_DOMAINS.keys())
