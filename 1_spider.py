@@ -109,24 +109,24 @@ def fetch_broad_rss(comp, keywords):
 def run_spider():
     # 核心竞对及官方域名矩阵
     OFFICIAL_DOMAINS = {
-        "顺丰":"sf-express.com","open.sf-express.com",
-        "菜鸟":"cainiao.com","open.cainiao.com",
-        "京东物流":"jdwl.com","open.jdl.com",
-        "中通":"zto.com","open.zto.cn",
-        "快递鸟":"kdniao.com",
-        "申通":"sto.cn","open.sto.cn",
-        "韵达":"yundaex.com","open.yundaex.com",
-        "圆通":"yto.net.cn","open.yto.net.cn",
-        "极兔":"jtexpress.cn","open.jtexpress.cn"
+        "顺丰": ["sf-express.com", "open.sf-express.com"],
+        "菜鸟": ["cainiao.com", "open.cainiao.com"],
+        "京东物流": ["jdwl.com", "open.jdl.com"],
+        "中通": ["zto.com", "open.zto.cn"],
+        "快递鸟": ["kdniao.com"],
+        "申通": ["sto.cn", "open.sto.cn"],
+        "韵达": ["yundaex.com", "open.yundaex.com"],
+        "圆通": ["yto.net.cn", "open.yto.net.cn"],
+        "极兔": ["jtexpress.cn", "open.jtexpress.cn"],
     }
     
     BROAD_COMPETITORS = list(OFFICIAL_DOMAINS.keys())
-    API_KEYWORDS =  ["API", "接口", "开放平台", "涨价", "降价", "规则", "同城急送", 
-                "大件","同城急送 API", "上门取件 接口", "国际寄件", "大件快运",
-                "快递价格", "电商退货 寄件",电商退货","多地址发货","二手闲置交易",
-                "开放平台 寄件", "商家发货","个人寄件", "商家寄件", "企业寄件",
-                "线上支付", "线下支付","智选运力","预充值" ,"快递单价", "快递价格",
-                "快递行业","API价格","API服务]
+    API_KEYWORDS = ["API", "接口", "开放平台", "涨价", "降价", "规则", "同城急送",
+                    "大件", "同城急送 API", "上门取件 接口", "国际寄件", "大件快运",
+                    "快递价格", "电商退货 寄件", "电商退货", "多地址发货", "二手闲置交易",
+                    "开放平台 寄件", "商家发货", "个人寄件", "商家寄件", "企业寄件",
+                    "线上支付", "线下支付", "智选运力", "预充值", "快递单价", "快递价格",
+                    "快递行业", "API价格", "API服务"]
 
     print(f"\n[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 🚀 启动混合双擎数据流水线...")
     new_count = 0
@@ -135,27 +135,24 @@ def run_spider():
     # 动作 1：强搜竞对官网及开放平台 (精准打靶)
     # ---------------------------------------------------------
     print("\n🎯 开始潜入竞对官网及开放平台扫描...")
-    for comp, domain in OFFICIAL_DOMAINS.items():
-        target_kws = random.sample( ["API", "接口", "开放平台", "涨价", "降价", "规则", "同城急送", 
-                "大件","同城急送 API", "上门取件 接口", "国际寄件", "大件快运",
-                "快递价格", "电商退货 寄件",电商退货","多地址发货","二手闲置交易",
-                "开放平台 寄件", "商家发货","个人寄件", "商家寄件", "企业寄件",
-                "线上支付", "线下支付","智选运力","预充值" ,"快递单价", "快递价格",
-                "快递行业","API价格","API服务], 2)
-        for kw in target_kws:
-            print(f"   -> 正在探测 {comp} 官网 ({domain}) : {kw}")
-            items = fetch_official_html(domain, kw)
-            for item in items:
-                try:
-                    supabase.table("news_v2").insert({
-                        "publish_time": item['time'], "competitor": f"{comp}(官方网站)", "business": kw,
-                        "title": item['title'], "snippet": item['snippet'], "url": item['link'],
-                        "process_status": 0
-                    }).execute()
-                    new_count += 1
-                    print(f"      ✅ [官网捕获] {item['title'][:20]}...")
-                except: pass
-            time.sleep(random.uniform(2.0, 4.0)) # 随机停顿防屏蔽
+    for comp, domains in OFFICIAL_DOMAINS.items():
+        target_kws = random.sample(API_KEYWORDS, 2)
+        for domain in domains:
+            for kw in target_kws:
+                print(f"   -> 正在探测 {comp} 官网 ({domain}) : {kw}")
+                items = fetch_official_html(domain, kw)
+                for item in items:
+                    try:
+                        supabase.table("news_v2").insert({
+                            "publish_time": item['time'], "competitor": f"{comp}(官方网站)", "business": kw,
+                            "title": item['title'], "snippet": item['snippet'], "url": item['link'],
+                            "process_status": 0
+                        }).execute()
+                        new_count += 1
+                        print(f"      ✅ [官网捕获] {item['title'][:20]}...")
+                    except:
+                        pass
+                time.sleep(random.uniform(2.0, 4.0)) # 随机停顿防屏蔽
 
     # ---------------------------------------------------------
     # 动作 2：RSS 聚合搜刮全网行业大盘 (无视拦截)
