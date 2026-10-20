@@ -28,7 +28,7 @@ def load_data():
         response = supabase.table("news_v2").select("*").eq("process_status", 1).order("crawl_timestamp", desc=True).execute()
         df = pd.DataFrame(response.data)
         if not df.empty:
-            df['crawl_timestamp'] = pd.to_datetime(df['crawl_timestamp'])
+            df['crawl_timestamp'] = pd.to_datetime(df['crawl_timestamp']).dt.tz_localize(None)
         return df
     except Exception as e:
         st.error(f"数据库连接异常: {e}")
