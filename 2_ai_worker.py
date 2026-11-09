@@ -64,7 +64,7 @@ def analyze_with_deepseek(competitor, title, snippet):
 
 def run_ai_worker():
     print("🧠 启动大模型异步分析流水线...")
-    response = supabase.table("news_v2").select("*").eq("process_status", 0).limit(20).execute()
+    response = supabase.table("news_v2").select("*").eq("process_status", 0).limit(1000).execute()
     pending_news = response.data
     
     if not pending_news:
