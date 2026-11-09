@@ -25,7 +25,7 @@ except Exception as e:
 def load_data():
     """只读取 AI 已经分析完毕 (process_status=1) 且未被拉黑的数据"""
     try:
-        response = supabase.table("news_v2").select("*").eq("process_status", 1).order("crawl_timestamp", desc=True).execute()
+        response = supabase.table("news_v2").select("*").eq("process_status", 1).order("publish_time", desc=True).execute()
         df = pd.DataFrame(response.data)
         if not df.empty:
             df['crawl_timestamp'] = pd.to_datetime(df['crawl_timestamp']).dt.tz_localize(None)
