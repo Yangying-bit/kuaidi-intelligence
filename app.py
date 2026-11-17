@@ -1,407 +1,563 @@
-"""Streamlit dashboard: full-dataset filtering for industry intelligence."""
-from __future__ import annotations
-
 import os
-from datetime import date, datetime, timedelta
-from zoneinfo import ZoneInfo
+import logging
+from datetime import datetime, timedelta, date
+from typing import Any, Dict, List
 
 import pandas as pd
-import plotly.express as px
 import streamlit as st
-from supabase import Client, create_client
+import plotly.express as px
+from supabase import create_client, Client
 
-st.set_page_config(page_title="行业竞对情报监控", layout="wide", page_icon="🛰️")
-CN_TZ = ZoneInfo("Asia/Shanghai")
-PAGE_SIZE = 1000
-RESULTS_PER_PAGE = 30
 
-# -----------------------------------------------------------------------------
-# Supabase connection
-# -----------------------------------------------------------------------------
+# ============================================================
+# 页面与日志
+# ============================================================
+st.set_page_config(page_title="寄件业务情报与AI分析大盘", layout="wide")
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("industry_intel_dashboard")
+
+
+# ============================================================
+# Supabase 配置
+# 兼容 Streamlit Cloud Secrets 和环境变量
+# ============================================================
+def read_config(name: str, default: str = "") -> str:
+    value = ""
+    try:
+        value = st.secrets.get(name, "")
+    except Exception:
+        pass
+
+    if not value:
+        try:
+            nested = st.secrets.get("supabase", {})
+            if isinstance(nested, dict):
+                nested_key = {
+                    "SUPABASE_URL": "url",
+                    "SUPABASE_KEY": "key",
+                    "SUPABASE_SERVICE_ROLE_KEY": "service_role_key",
+                    "SUPABASE_ANON_KEY": "anon_key",
+                }.get(name, name.lower())
+                value = nested.get(nested_key, "")
+        except Exception:
+            pass
+
+    if not value:
+        value = os.environ.get(name, "")
+
+    return str(value or default).strip().strip("'\"")
+
+
+@st.cache_resource(show_spinner=False)
+def get_supabase() -> Client:
+    url = read_config("SUPABASE_URL")
+    # 优先沿用原项目中的 SUPABASE_KEY；也兼容常见的其他命名
+    key = (
+        read_config("SUPABASE_KEY")
+        or read_config("SUPABASE_SERVICE_ROLE_KEY")
+        or read_config("SUPABASE_ANON_KEY")
+    )
+    if not url or not key:
+        raise RuntimeError(
+            "缺少 Supabase 配置。请在 Streamlit Cloud → Settings → Secrets 中配置 "
+            "SUPABASE_URL 和 SUPABASE_KEY（或 SUPABASE_SERVICE_ROLE_KEY）。"
+        )
+    return create_client(url.rstrip("/"), key)
+
+
 try:
-    supabase_url = (os.getenv("SUPABASE_URL") or st.secrets.get("SUPABASE_URL", "")).strip().strip("'\"").rstrip("/")
-    supabase_key = (os.getenv("SUPABASE_KEY") or st.secrets.get("SUPABASE_KEY", "")).strip().strip("'\"")
-    if not supabase_url or not supabase_key:
-        raise RuntimeError("未配置 SUPABASE_URL / SUPABASE_KEY")
-    supabase: Client = create_client(supabase_url, supabase_key)
+    supabase: Client = get_supabase()
 except Exception as exc:
-    st.error(f"Supabase 连接配置异常：{exc}")
+    logger.exception("Supabase 客户端初始化失败")
+    st.error("Supabase 初始化失败，请检查 Streamlit Cloud 的 Secrets 配置。")
+    with st.expander("查看诊断信息"):
+        st.code(f"{type(exc).__name__}: {exc}")
     st.stop()
 
-COLUMNS = (
-    "id,competitor,business,title,snippet,raw_snippet,page_content,url,canonical_url,"
-    "publish_time,published_at,crawl_timestamp,source_type,source_name,source_domain,"
-    "ai_score,ai_analysis,ai_suggestion,ai_summary,is_relevant,competitor_confirmed,"
-    "relevance_score,ai_confidence,event_type,evidence,process_status,retry_count,last_error"
-)
 
-
-@st.cache_data(ttl=90, show_spinner="正在从 Supabase 分页加载全部已分析情报…")
-def load_processed_data() -> pd.DataFrame:
-    """逐页读取全部 process_status=1 记录，避免 REST 单次行数上限造成遗漏。"""
-    rows: list[dict] = []
+# ============================================================
+# 数据加载
+# 通过 range 分页，避免 Supabase 单次返回条数上限导致历史情报缺失
+# ============================================================
+@st.cache_data(ttl=60, show_spinner="正在从 Supabase 加载全部已分析情报…")
+def load_data() -> pd.DataFrame:
+    page_size = 500
     start = 0
-    while True:
-        response = (
-            supabase.table("news_v2")
-            .select(COLUMNS)
-            .eq("process_status", 1)
-            .order("crawl_timestamp", desc=True)
-            .order("id", desc=True)
-            .range(start, start + PAGE_SIZE - 1)
-            .execute()
-        )
-        batch = response.data or []
-        rows.extend(batch)
-        if len(batch) < PAGE_SIZE:
-            break
-        start += PAGE_SIZE
+    all_rows: List[Dict[str, Any]] = []
+    max_pages = 200  # 防止异常情况下出现无限循环；最多读取 100,000 条
 
-    df = pd.DataFrame(rows)
-    if df.empty:
+    try:
+        for _ in range(max_pages):
+            response = (
+                supabase.table("news_v2")
+                .select("*")
+                .eq("process_status", 1)
+                .range(start, start + page_size - 1)
+                .execute()
+            )
+            batch = response.data or []
+            all_rows.extend(batch)
+
+            if len(batch) < page_size:
+                break
+            start += page_size
+        else:
+            logger.warning("情报读取达到分页安全上限，已读取 %s 条", len(all_rows))
+
+        df = pd.DataFrame(all_rows)
+        if df.empty:
+            return df
+
+        # 兼容旧数据中可能缺少的字段，避免看板因单列缺失直接崩溃
+        defaults = {
+            "id": None,
+            "competitor": "未分类竞对",
+            "business": "未分类业务",
+            "title": "无标题",
+            "url": "",
+            "publish_time": "",
+            "snippet": "",
+            "ai_score": None,
+            "ai_analysis": "",
+            "ai_suggestion": "",
+            "crawl_timestamp": None,
+        }
+        for col, default_value in defaults.items():
+            if col not in df.columns:
+                df[col] = default_value
+
+        # 统一评分类型
+        df["ai_score"] = pd.to_numeric(df["ai_score"], errors="coerce")
+
+        # 优先使用 crawl_timestamp；缺失时尝试从 publish_time 解析
+        crawl_ts = pd.to_datetime(df["crawl_timestamp"], errors="coerce", utc=True)
+        publish_ts = pd.to_datetime(df["publish_time"], errors="coerce", utc=True)
+        crawl_ts = crawl_ts.fillna(publish_ts)
+        df["crawl_timestamp"] = crawl_ts.dt.tz_convert("Asia/Shanghai").dt.tz_localize(None)
+
+        # 标题中带日期时优先使用标题日期；否则使用时间字段
+        title_date = df["title"].astype(str).str.extract(r"(\d{4}-\d{2}-\d{2})", expand=False)
+        timestamp_date = df["crawl_timestamp"].dt.strftime("%Y-%m-%d")
+        df["real_date"] = title_date.fillna(timestamp_date)
+        df["real_date"] = pd.to_datetime(df["real_date"], errors="coerce").dt.date
+
+        df["competitor"] = df["competitor"].fillna("未分类竞对").astype(str)
+        df["business"] = df["business"].fillna("未分类业务").astype(str)
+        df["title"] = df["title"].fillna("无标题").astype(str)
+
+        df = df.sort_values(
+            by=["real_date", "crawl_timestamp"],
+            ascending=[False, False],
+            na_position="last",
+        ).reset_index(drop=True)
         return df
 
-    # Supabase 时间统一转换为中国时区；无效时间保留为空，不让单条坏数据导致整表加载失败。
-    for source_col, target_col in (("crawl_timestamp", "crawl_dt"), ("published_at", "published_dt")):
-        parsed = pd.to_datetime(df[source_col], utc=True, errors="coerce")
-        df[target_col] = parsed.dt.tz_convert(CN_TZ).dt.tz_localize(None)
-
-    df["ai_score"] = pd.to_numeric(df["ai_score"], errors="coerce").fillna(0).clip(0, 10).astype(int)
-    df["relevance_score"] = pd.to_numeric(df["relevance_score"], errors="coerce").fillna(0).clip(0, 100).astype(int)
-    df["ai_confidence"] = pd.to_numeric(df["ai_confidence"], errors="coerce")
-
-    for col, fallback in (("business", "待AI识别"), ("competitor", "未知竞对"),
-                          ("source_name", ""), ("source_domain", ""), ("source_type", ""),
-                          ("event_type", "待识别")):
-        if col not in df.columns:
-            df[col] = fallback
-        df[col] = df[col].fillna(fallback).astype(str).replace({"": fallback})
-
-    # 保留“待确认”状态，不把数据库 NULL 粗暴转换成 True。
-    def relevance_label(value: object) -> str:
-        if pd.isna(value):
-            return "待确认"
-        if isinstance(value, str):
-            normalized = value.strip().lower()
-            if normalized in {"true", "1", "yes", "y"}:
-                return "高相关"
-            if normalized in {"false", "0", "no", "n"}:
-                return "低相关"
-            return "待确认"
-        return "高相关" if bool(value) else "低相关"
-
-    df["relevance_label"] = df["is_relevant"].map(relevance_label)
-    df["real_date"] = df["crawl_dt"].dt.strftime("%Y-%m-%d")
-    df = df.sort_values(["crawl_dt", "id"], ascending=[False, False], na_position="last").reset_index(drop=True)
-    return df
+    except Exception as exc:
+        logger.exception("读取 Supabase news_v2 表失败")
+        # 不要把数据库错误伪装成“没有情报”，明确提示真实错误位置
+        st.error("读取 Supabase 情报数据失败。当前错误发生在数据库查询阶段，不是筛选控件导致的。")
+        with st.expander("展开 Supabase 错误详情（排查时请复制给开发者）", expanded=True):
+            st.code(f"{type(exc).__name__}: {exc}")
+            st.markdown(
+                "请重点检查：`news_v2` 表是否存在、`process_status` 字段是否存在、"
+                "当前 API Key 是否有 SELECT 权限，以及 Supabase 项目是否可访问。"
+            )
+        return pd.DataFrame()
 
 
-def count_by_status(status: int) -> int:
-    try:
-        response = supabase.table("news_v2").select("id", count="exact", head=True).eq("process_status", status).execute()
-        return int(response.count or 0)
-    except Exception:
-        return -1
-
-
-def hide_news(record_id: int | str) -> None:
+def delete_news(record_id: Any) -> None:
+    """软删除：将 process_status 设置为 -1。"""
     try:
         supabase.table("news_v2").update({"process_status": -1}).eq("id", record_id).execute()
-        load_processed_data.clear()
-        st.toast("已从看板隐藏该条情报")
+        load_data.clear()
+        st.success("该条情报已从看板隐藏。")
         st.rerun()
     except Exception as exc:
-        st.error(f"隐藏失败：{exc}")
+        logger.exception("删除情报失败，record_id=%s", record_id)
+        st.error("删除失败，请检查数据库更新权限。")
+        with st.expander("查看删除错误详情"):
+            st.code(f"{type(exc).__name__}: {exc}")
 
 
-def safe_options(series: pd.Series) -> list[str]:
-    values = series.dropna().astype(str).str.strip()
-    return sorted(v for v in values.unique().tolist() if v)
+# ============================================================
+# 读取全量已分析数据
+# ============================================================
+df = load_data()
+st.title("👁️‍🗨️ 行业竞对情报——DeepSeek 驱动分析")
+st.caption("数据范围：Supabase news_v2 表中 process_status = 1 的已分析情报；列表支持跨分页全量筛选。")
 
-
-def apply_filters(data: pd.DataFrame, *, date_start: date | None, date_end: date | None,
-                  selected_competitors: list[str], selected_businesses: list[str],
-                  selected_events: list[str], selected_sources: list[str],
-                  relevance_scope: str, selected_risks: list[str], keyword: str) -> pd.DataFrame:
-    """所有条件统一作用于完整数据集；各统计、列表和复盘共用同一个结果。"""
-    result = data.copy()
-
-    if date_start is not None:
-        result = result[result["crawl_dt"].notna() & (result["crawl_dt"].dt.date >= date_start)]
-    if date_end is not None:
-        result = result[result["crawl_dt"].notna() & (result["crawl_dt"].dt.date <= date_end)]
-
-    # 多选条件：未选择任何项时返回空集，避免用户清空筛选后反而看到全部数据。
-    result = result[result["competitor"].isin(selected_competitors)]
-    result = result[result["business"].isin(selected_businesses)]
-    result = result[result["event_type"].isin(selected_events)]
-    result = result[result["source_filter"].isin(selected_sources)]
-
-    if relevance_scope == "仅高相关":
-        result = result[result["relevance_label"] == "高相关"]
-    elif relevance_scope == "仅低相关/待确认":
-        result = result[result["relevance_label"].isin(["低相关", "待确认"])]
-
-    score = result["ai_score"]
-    allowed_scores: list[int] = []
-    if "重大影响（8-10分）" in selected_risks:
-        allowed_scores.extend([8, 9, 10])
-    if "值得关注（5-7分）" in selected_risks:
-        allowed_scores.extend([5, 6, 7])
-    if "影响较小（0-4分）" in selected_risks:
-        allowed_scores.extend([0, 1, 2, 3, 4])
-    result = result[score.isin(allowed_scores)]
-
-    query = keyword.strip()
-    if query:
-        searchable_columns = [
-            "title", "snippet", "raw_snippet", "page_content", "ai_summary",
-            "ai_analysis", "ai_suggestion", "evidence", "competitor", "business",
-            "event_type", "source_name", "source_domain",
-        ]
-        mask = pd.Series(False, index=result.index)
-        for col in searchable_columns:
-            if col in result.columns:
-                mask |= result[col].fillna("").astype(str).str.contains(query, case=False, regex=False)
-        result = result[mask]
-
-    return result.sort_values(["crawl_dt", "id"], ascending=[False, False], na_position="last")
-
-
-def render_news_card(row: pd.Series, prefix: str = "all") -> None:
-    score = int(row.get("ai_score", 0) or 0)
-    relevance = int(row.get("relevance_score", 0) or 0)
-    risk = "🔴 重大影响" if score >= 8 else "🟡 值得关注" if score >= 5 else "🟢 影响较小"
-    title = str(row.get("title") or "无标题")
-    url = str(row.get("url") or row.get("canonical_url") or "")
-    record_id = row.get("id")
-
-    with st.container(border=True):
-        left, right = st.columns([0.88, 0.12])
-        with left:
-            st.markdown(f"**【{row.get('competitor', '未知竞对')} · {row.get('business', '待AI识别')}】**")
-            if url.startswith(("http://", "https://")):
-                st.markdown(f"[{title}]({url})")
-            else:
-                st.markdown(f"**{title}**")
-            crawl_time = row.get("crawl_dt")
-            crawl_text = crawl_time.strftime("%Y-%m-%d %H:%M:%S") if pd.notna(crawl_time) else "采集时间未知"
-            publish_time = row.get("publish_time") or "发布时间未知"
-            source = row.get("source_name") or row.get("source_domain") or row.get("source_type") or "未知来源"
-            st.caption(f"发布时间：{publish_time} · 采集时间：{crawl_text} · 来源：{source}")
-            st.caption(f"{risk}（{score}/10） · 相关性 {relevance}/100 · {row.get('relevance_label', '待确认')} · 事件：{row.get('event_type') or '待识别'}")
-        with right:
-            st.button("隐藏", key=f"hide_{prefix}_{record_id}", on_click=hide_news, args=(record_id,), use_container_width=True)
-        with st.expander("查看原文摘要、AI判断与应对建议"):
-            st.markdown(f"**AI情报总结：** {row.get('ai_summary') or '暂无总结'}")
-            st.markdown(f"**原始来源摘要：** {row.get('raw_snippet') or row.get('snippet') or '暂无摘要'}")
-            st.markdown(f"**主体确认：** {'已确认' if row.get('competitor_confirmed') else '未确认/存疑'}")
-            st.markdown(f"**业务影响分析：** {row.get('ai_analysis') or '暂无分析'}")
-            st.markdown(f"**建议动作：** {row.get('ai_suggestion') or '暂无建议'}")
-            st.markdown(f"**判断依据：** {row.get('evidence') or '暂无明确证据'}")
-            if row.get("page_content"):
-                with st.expander("网页正文摘录"):
-                    st.write(str(row["page_content"])[:5000])
-
-
-# -----------------------------------------------------------------------------
-# Page header and pipeline health
-# -----------------------------------------------------------------------------
-st.title("🛰️ 行业竞对情报监控")
-st.caption("面向快递100寄件 API、开放平台、同城寄递、大件、国际寄递及企业寄件业务的竞争情报看板")
-
-refresh_col, status_col = st.columns([0.18, 0.82])
-with refresh_col:
-    if st.button("↻ 刷新数据", use_container_width=True):
-        load_processed_data.clear()
-        st.rerun()
-with status_col:
-    pending_count = count_by_status(0)
-    processing_count = count_by_status(2)
-    failed_count = count_by_status(3)
-    st.caption(
-        f"流水线状态：待分析 {pending_count if pending_count >= 0 else '—'} 条 · "
-        f"正在处理 {processing_count if processing_count >= 0 else '—'} 条 · "
-        f"失败待重试/待排查 {failed_count if failed_count >= 0 else '—'} 条"
-    )
-
-df = load_processed_data()
 if df.empty:
-    st.info("目前没有已完成分析的情报。请检查 GitHub Actions 采集任务、AI 分析任务和 Supabase 数据库迁移。")
+    st.info("目前没有读取到已分析情报。若数据库中确认已有数据，请展开上方错误详情检查 Supabase 查询权限、字段和连接配置。")
     st.stop()
 
-# Build a stable source display field for the source filter.
-df["source_filter"] = df.apply(
-    lambda row: str(row.get("source_name") or row.get("source_domain") or row.get("source_type") or "未知来源"), axis=1
-)
 
-now_cn = datetime.now(CN_TZ).replace(tzinfo=None)
-two_hours_ago = now_cn - timedelta(hours=2)
-today_start = now_cn.replace(hour=0, minute=0, second=0, microsecond=0)
-new_last_2h = int((df["crawl_dt"] >= two_hours_ago).sum())
-new_today = int((df["crawl_dt"] >= today_start).sum())
-all_high_threats = int(((df["relevance_label"] == "高相关") & (df["ai_score"] >= 7)).sum())
+# ============================================================
+# 全量筛选区：所有图表、指标和情报列表统一使用 filtered_df
+# ============================================================
+st.subheader("🔎 全量情报筛选")
 
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("近 2 小时新增", f"{new_last_2h} 条")
-m2.metric("今日采集并分析", f"{new_today} 条")
-m3.metric("高相关高影响情报", f"{all_high_threats} 条")
-m4.metric("已分析情报总量", f"{len(df):,} 条")
+competitor_options = sorted(df["competitor"].dropna().unique().tolist())
+business_options = sorted(df["business"].dropna().unique().tolist())
 
-st.divider()
-st.subheader("全量情报筛选")
-st.caption("默认覆盖数据库中全部已分析情报和全部历史日期。下面的筛选条件会同步作用于情报列表、统计图表和近 7 天复盘。")
-
-# Date presets are explicit so users can return to the entire historical range at any time.
-date_values = pd.to_datetime(df["real_date"], errors="coerce").dropna()
-min_data_date = date_values.min().date() if not date_values.empty else date.today()
-max_data_date = date_values.max().date() if not date_values.empty else date.today()
-
-with st.container(border=True):
-    f1, f2, f3 = st.columns([1.05, 1.25, 1.7])
-    with f1:
-        date_mode = st.selectbox("时间范围", ["全部日期", "最近 7 天", "最近 30 天", "最近 90 天", "自定义日期"], index=0, key="filter_date_mode")
-    with f2:
-        relevance_scope = st.selectbox("情报范围", ["全部情报", "仅高相关", "仅低相关/待确认"], index=0, key="filter_relevance")
-    with f3:
-        keyword = st.text_input("全文关键词", placeholder="可搜索标题、摘要、正文、AI分析、建议、证据等", key="filter_keyword")
-
-    custom_start: date | None = None
-    custom_end: date | None = None
-    if date_mode == "自定义日期":
-        d1, d2 = st.columns(2)
-        with d1:
-            custom_start = st.date_input("开始日期", value=min_data_date, min_value=min_data_date, max_value=max_data_date, key="filter_start_date")
-        with d2:
-            custom_end = st.date_input("结束日期", value=max_data_date, min_value=min_data_date, max_value=max_data_date, key="filter_end_date")
-        if custom_start > custom_end:
-            st.warning("开始日期不能晚于结束日期，本次将自动交换日期范围。")
-            custom_start, custom_end = custom_end, custom_start
-
-    all_competitors = safe_options(df["competitor"])
-    all_businesses = safe_options(df["business"])
-    all_events = safe_options(df["event_type"])
-    all_sources = safe_options(df["source_filter"])
-
-    f4, f5 = st.columns(2)
-    with f4:
-        selected_competitors = st.multiselect("监控对象 / 竞对", all_competitors, default=all_competitors, key="filter_competitors")
-    with f5:
-        selected_businesses = st.multiselect("业务模块", all_businesses, default=all_businesses, key="filter_businesses")
-
-    f6, f7 = st.columns(2)
-    with f6:
-        selected_events = st.multiselect("事件类型", all_events, default=all_events, key="filter_events")
-    with f7:
-        selected_sources = st.multiselect("情报来源", all_sources, default=all_sources, key="filter_sources")
-
-    all_risks = ["重大影响（8-10分）", "值得关注（5-7分）", "影响较小（0-4分）"]
-    selected_risks = st.multiselect("潜在影响程度", all_risks, default=all_risks, key="filter_risks")
-
-# Resolve date range.
-if date_mode == "最近 7 天":
-    date_start, date_end = (now_cn - timedelta(days=6)).date(), now_cn.date()
-elif date_mode == "最近 30 天":
-    date_start, date_end = (now_cn - timedelta(days=29)).date(), now_cn.date()
-elif date_mode == "最近 90 天":
-    date_start, date_end = (now_cn - timedelta(days=89)).date(), now_cn.date()
-elif date_mode == "自定义日期":
-    date_start, date_end = custom_start, custom_end
-else:
-    date_start, date_end = None, None
-
-filtered = apply_filters(
-    df,
-    date_start=date_start,
-    date_end=date_end,
-    selected_competitors=selected_competitors,
-    selected_businesses=selected_businesses,
-    selected_events=selected_events,
-    selected_sources=selected_sources,
-    relevance_scope=relevance_scope,
-    selected_risks=selected_risks,
-    keyword=keyword,
-)
-
-st.caption(f"全库 {len(df):,} 条 · 当前筛选结果 {len(filtered):,} 条 · 当前范围：{date_mode} / {relevance_scope}")
-
-# Reset pagination whenever any filter changes, including date scope and keyword.
-filter_signature = (
-    date_mode, date_start, date_end, relevance_scope, keyword.strip(),
-    tuple(selected_competitors), tuple(selected_businesses), tuple(selected_events),
-    tuple(selected_sources), tuple(selected_risks),
-)
-if st.session_state.get("_last_filter_signature") != filter_signature:
-    st.session_state["_last_filter_signature"] = filter_signature
-    st.session_state["all_news_page"] = 1
-
-# -----------------------------------------------------------------------------
-# All summaries, charts, export, review and list use the same filtered dataframe.
-# -----------------------------------------------------------------------------
-st.divider()
-st.subheader("筛选结果概览")
-if filtered.empty:
-    st.info("没有符合当前筛选条件的情报。请扩大时间范围，或取消部分竞对、业务、事件、来源及影响程度筛选。")
-else:
-    high_count = int((filtered["ai_score"] >= 8).sum())
-    medium_count = int(((filtered["ai_score"] >= 5) & (filtered["ai_score"] < 8)).sum())
-    low_count = int((filtered["ai_score"] < 5).sum())
-    s1, s2, s3, s4 = st.columns(4)
-    s1.metric("筛选后情报", f"{len(filtered):,} 条")
-    s2.metric("重大影响", f"{high_count:,} 条")
-    s3.metric("值得关注", f"{medium_count:,} 条")
-    s4.metric("影响较小", f"{low_count:,} 条")
-
-    chart1, chart2 = st.columns(2)
-    with chart1:
-        comp_counts = filtered["competitor"].value_counts().rename_axis("竞对").reset_index(name="情报数量")
-        fig = px.bar(comp_counts, x="竞对", y="情报数量", text="情报数量", title="筛选结果 · 竞对分布")
-        fig.update_layout(height=340, margin=dict(t=55, l=10, r=10, b=25), showlegend=False)
-        st.plotly_chart(fig, use_container_width=True)
-    with chart2:
-        biz_counts = filtered["business"].value_counts().rename_axis("业务模块").reset_index(name="情报数量")
-        fig = px.treemap(biz_counts, path=["业务模块"], values="情报数量", title="筛选结果 · 业务主题分布", color="情报数量", color_continuous_scale="Blues")
-        fig.update_layout(height=340, margin=dict(t=55, l=5, r=5, b=5))
-        fig.update_coloraxes(showscale=False)
-        st.plotly_chart(fig, use_container_width=True)
-
-    st.divider()
-    st.subheader("📚 全量情报列表")
-    st.caption("此列表展示全部符合筛选条件的历史情报，不再默认限定为最新一天或最近 7 天。")
-    export_df = filtered.copy()
-    export_columns = [c for c in [
-        "competitor", "business", "event_type", "title", "url", "publish_time",
-        "crawl_timestamp", "source_name", "source_domain", "ai_score",
-        "relevance_score", "relevance_label", "ai_summary", "ai_analysis",
-        "ai_suggestion", "evidence",
-    ] if c in export_df.columns]
-    csv_bytes = export_df[export_columns].to_csv(index=False, encoding="utf-8-sig").encode("utf-8-sig")
-    st.download_button(
-        "下载当前筛选的全部情报（CSV）", data=csv_bytes,
-        file_name=f"行业情报筛选结果_{datetime.now(CN_TZ).strftime('%Y%m%d_%H%M%S')}.csv",
-        mime="text/csv", key="download_filtered_news",
+filter_row1_col1, filter_row1_col2, filter_row1_col3 = st.columns([1.1, 1.2, 1.2])
+with filter_row1_col1:
+    date_mode = st.selectbox(
+        "📅 时间范围",
+        ["全部日期", "今天", "近7天", "近30天", "近90天", "自定义"],
+        index=0,
+        key="filter_date_mode",
     )
-    total_pages = max(1, (len(filtered) + RESULTS_PER_PAGE - 1) // RESULTS_PER_PAGE)
-    page_col, info_col = st.columns([0.25, 0.75])
-    with page_col:
-        if "all_news_page" not in st.session_state or int(st.session_state["all_news_page"]) > total_pages:
-            st.session_state["all_news_page"] = 1
-        page = st.number_input("结果页码", min_value=1, max_value=total_pages, step=1, key="all_news_page")
-    with info_col:
-        st.caption(f"共 {total_pages} 页，每页 {RESULTS_PER_PAGE} 条；筛选条件变化时会自动返回第 1 页。")
-    page_df = filtered.iloc[(int(page) - 1) * RESULTS_PER_PAGE:int(page) * RESULTS_PER_PAGE]
-    for _, row in page_df.iterrows():
-        render_news_card(row, "all")
+with filter_row1_col2:
+    selected_competitors = st.multiselect(
+        "🎯 监控竞对",
+        options=competitor_options,
+        default=competitor_options,
+        key="filter_competitors",
+        placeholder="选择一个或多个竞对",
+    )
+with filter_row1_col3:
+    selected_businesses = st.multiselect(
+        "📦 业务模块",
+        options=business_options,
+        default=business_options,
+        key="filter_businesses",
+        placeholder="选择一个或多个业务模块",
+    )
 
-    st.divider()
-    st.subheader("近 7 天情报复盘（遵循当前筛选条件）")
-    seven_days_ago = (now_cn - timedelta(days=6)).date()
-    recent = filtered[filtered["crawl_dt"].notna() & (filtered["crawl_dt"].dt.date >= seven_days_ago)].copy()
-    if recent.empty:
-        st.info("当前筛选条件下，近 7 天没有情报。")
+filter_row2_col1, filter_row2_col2 = st.columns([1.25, 2.0])
+with filter_row2_col1:
+    risk_options = [
+        "🔴 重大影响（8–10分）",
+        "🟡 值得关注（5–7分）",
+        "🟢 影响较小（0–4分）",
+        "⚪ 未评分",
+    ]
+    selected_risks = st.multiselect(
+        "⚠️ 影响程度",
+        options=risk_options,
+        default=risk_options,
+        key="filter_risks",
+    )
+with filter_row2_col2:
+    keyword = st.text_input(
+        "🔍 全文搜索",
+        placeholder="输入产品名称、关键词或内容；搜索标题、摘要、正文、AI分析和建议",
+        key="filter_keyword",
+    )
+
+custom_start = None
+custom_end = None
+if date_mode == "自定义":
+    valid_dates = df["real_date"].dropna()
+    min_date = valid_dates.min() if not valid_dates.empty else date.today()
+    max_date = valid_dates.max() if not valid_dates.empty else date.today()
+    date_col1, date_col2 = st.columns(2)
+    with date_col1:
+        custom_start = st.date_input("开始日期", value=min_date, min_value=min_date, max_value=max_date, key="filter_start_date")
+    with date_col2:
+        custom_end = st.date_input("结束日期", value=max_date, min_value=min_date, max_value=max_date, key="filter_end_date")
+
+# 逐项筛选，保证所有模块复用同一个结果集
+filtered_df = df.copy()
+now_cn = pd.Timestamp.now(tz="Asia/Shanghai").tz_localize(None)
+today = now_cn.date()
+
+if date_mode == "今天":
+    filtered_df = filtered_df[filtered_df["real_date"] == today]
+elif date_mode in ("近7天", "近30天", "近90天"):
+    days = {"近7天": 7, "近30天": 30, "近90天": 90}[date_mode]
+    start_day = today - timedelta(days=days - 1)
+    filtered_df = filtered_df[filtered_df["real_date"].apply(lambda x: pd.notna(x) and x >= start_day)]
+elif date_mode == "自定义" and custom_start and custom_end:
+    if custom_start > custom_end:
+        st.warning("开始日期不能晚于结束日期。")
+        filtered_df = filtered_df.iloc[0:0]
     else:
-        recent["review_date"] = recent["crawl_dt"].dt.strftime("%Y-%m-%d")
-        for idx, (day_text, group) in enumerate(recent.groupby("review_date", dropna=False, sort=True)):
-            with st.expander(f"{day_text} · {len(group)} 条", expanded=(idx == 0)):
-                display_cols = ["competitor", "business", "event_type", "title", "ai_score", "relevance_score"]
-                st.dataframe(group[display_cols], use_container_width=True, hide_index=True)
+        filtered_df = filtered_df[
+            filtered_df["real_date"].apply(
+                lambda x: pd.notna(x) and custom_start <= x <= custom_end
+            )
+        ]
+
+if selected_competitors:
+    filtered_df = filtered_df[filtered_df["competitor"].isin(selected_competitors)]
+else:
+    filtered_df = filtered_df.iloc[0:0]
+
+if selected_businesses:
+    filtered_df = filtered_df[filtered_df["business"].isin(selected_businesses)]
+else:
+    filtered_df = filtered_df.iloc[0:0]
+
+score = filtered_df["ai_score"]
+allowed_mask = pd.Series(False, index=filtered_df.index)
+if "🔴 重大影响（8–10分）" in selected_risks:
+    allowed_mask |= score.between(8, 10, inclusive="both")
+if "🟡 值得关注（5–7分）" in selected_risks:
+    allowed_mask |= score.between(5, 7, inclusive="both")
+if "🟢 影响较小（0–4分）" in selected_risks:
+    allowed_mask |= score.between(0, 4, inclusive="both")
+if "⚪ 未评分" in selected_risks:
+    allowed_mask |= score.isna()
+filtered_df = filtered_df[allowed_mask]
+
+if keyword.strip():
+    search_columns = [
+        "title", "competitor", "business", "snippet", "ai_analysis", "ai_suggestion", "url"
+    ]
+    search_text = filtered_df[search_columns].fillna("").astype(str).agg(" ".join, axis=1)
+    filtered_df = filtered_df[search_text.str.contains(keyword.strip(), case=False, regex=False)]
+
+filtered_df = filtered_df.sort_values(
+    by=["real_date", "crawl_timestamp"], ascending=[False, False], na_position="last"
+).reset_index(drop=True)
+
+metric_cols = st.columns(4)
+metric_cols[0].metric("📚 全部有效情报", f"{len(df):,} 条")
+metric_cols[1].metric("🔎 当前筛选命中", f"{len(filtered_df):,} 条")
+metric_cols[2].metric("🚨 当前筛选高影响", f"{int(filtered_df['ai_score'].ge(8).sum()):,} 条")
+recent_24h = now_cn - pd.Timedelta(hours=24)
+metric_cols[3].metric(
+    "🕒 当前筛选近24小时",
+    f"{int(filtered_df['crawl_timestamp'].ge(recent_24h).sum()):,} 条",
+)
+st.caption("提示：默认时间范围为‘全部日期’，默认选中全部竞对、业务模块和影响程度。取消某个选项即可缩小范围。")
+st.markdown("---")
+
+
+# ============================================================
+# 描述统计：统一使用 filtered_df
+# ============================================================
+st.subheader("📊 描述统计（随筛选条件联动）")
+chart_col1, chart_col2 = st.columns(2)
+
+with chart_col1:
+    st.markdown("**🎯 竞对活跃度排行**")
+    comp_counts = filtered_df["competitor"].value_counts().rename_axis("竞对").reset_index(name="情报数量")
+    if comp_counts.empty:
+        st.info("当前筛选条件下没有可统计的数据。")
+    else:
+        fig_left = px.bar(comp_counts, x="竞对", y="情报数量", text="情报数量")
+        fig_left.update_layout(
+            height=380,
+            margin=dict(t=20, l=10, r=10, b=30),
+            paper_bgcolor="rgba(0,0,0,0)",
+            plot_bgcolor="rgba(0,0,0,0)",
+            xaxis=dict(showgrid=False, title=None, tickfont=dict(color="#333333", size=13)),
+            yaxis=dict(showgrid=True, gridcolor="#F0F2F6", title=None, showticklabels=False),
+        )
+        fig_left.update_traces(
+            marker_color="#1E88E5",
+            textposition="outside",
+            textfont=dict(color="#1E88E5", size=13, weight="bold"),
+            width=0.4,
+        )
+        st.plotly_chart(fig_left, use_container_width=True, theme=None)
+
+with chart_col2:
+    if "drilldown_keyword" not in st.session_state:
+        st.session_state.drilldown_keyword = None
+
+    available_businesses = set(filtered_df["business"].dropna().unique().tolist())
+    if st.session_state.drilldown_keyword not in available_businesses:
+        st.session_state.drilldown_keyword = None
+
+    if st.session_state.drilldown_keyword is None:
+        st.markdown("**🏷️ 业务焦点热力分布** <span style='font-size:12px;color:#888;'>点击业务查看竞对分布</span>", unsafe_allow_html=True)
+        biz_counts = filtered_df["business"].value_counts().rename_axis("业务模块").reset_index(name="情报数量")
+        if biz_counts.empty:
+            st.info("当前筛选条件下没有可统计的数据。")
+        else:
+            fig_tree = px.treemap(
+                biz_counts,
+                path=["业务模块"],
+                values="情报数量",
+                color="情报数量",
+                color_continuous_scale="Blues",
+            )
+            fig_tree.update_layout(
+                height=380,
+                margin=dict(t=10, l=0, r=0, b=0),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+            )
+            fig_tree.update_coloraxes(showscale=False)
+            fig_tree.update_traces(tiling=dict(pad=0), marker=dict(line=dict(color="#FFFFFF", width=2)))
+            selected_tree = st.plotly_chart(
+                fig_tree,
+                use_container_width=True,
+                theme=None,
+                on_select="rerun",
+                selection_mode="points",
+                key="treemap_selection",
+            )
+            try:
+                points = selected_tree.selection.points
+                if points:
+                    clicked = points[0].get("label")
+                    if clicked in available_businesses:
+                        st.session_state.drilldown_keyword = clicked
+                        st.rerun()
+            except Exception:
+                pass
+    else:
+        keyword_business = st.session_state.drilldown_keyword
+        back_col, title_col = st.columns([0.25, 0.75])
+        with back_col:
+            if st.button("← 返回热力图", use_container_width=True):
+                st.session_state.drilldown_keyword = None
+                st.rerun()
+        with title_col:
+            st.markdown(f"**{keyword_business} · 竞对分布**")
+        sub_df = (
+            filtered_df[filtered_df["business"] == keyword_business]["competitor"]
+            .value_counts().rename_axis("竞对").reset_index(name="情报数量")
+        )
+        if not sub_df.empty:
+            sub_df = sub_df.sort_values("情报数量", ascending=True)
+            fig_bar = px.bar(
+                sub_df,
+                x="情报数量",
+                y="竞对",
+                orientation="h",
+                text="情报数量",
+                color="情报数量",
+                color_continuous_scale="Blues",
+            )
+            fig_bar.update_layout(
+                height=335,
+                margin=dict(t=10, l=80, r=30, b=10),
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                xaxis=dict(showgrid=False, showticklabels=False, title=None),
+                yaxis=dict(showgrid=False, title=None, automargin=True),
+            )
+            fig_bar.update_coloraxes(showscale=False)
+            fig_bar.update_traces(textposition="outside", textfont=dict(size=13, weight="bold", color="#1E88E5"))
+            st.plotly_chart(fig_bar, use_container_width=True, theme=None)
+
+st.markdown("---")
+
+
+# ============================================================
+# 情报卡片与列表
+# ============================================================
+def safe_text(value: Any, fallback: str = "暂无") -> str:
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return fallback
+    text_value = str(value).strip()
+    return text_value if text_value else fallback
+
+
+def render_news_card(row: pd.Series, tab_prefix: str = "") -> None:
+    score_value = row.get("ai_score")
+    score_is_valid = pd.notna(score_value)
+    score_value = int(score_value) if score_is_valid else None
+
+    if score_value is None:
+        risk_text = "⚪ 未评分"
+        score_text = "未评分"
+    elif score_value >= 8:
+        risk_text = "🔴 重大影响"
+        score_text = f"{score_value}/10"
+    elif score_value >= 5:
+        risk_text = "🟡 值得关注"
+        score_text = f"{score_value}/10"
+    else:
+        risk_text = "🟢 影响较小"
+        score_text = f"{score_value}/10"
+
+    record_id = row.get("id")
+    competitor = safe_text(row.get("competitor"), "未分类竞对")
+    business = safe_text(row.get("business"), "未分类业务")
+    title = safe_text(row.get("title"), "无标题")
+    url = safe_text(row.get("url"), "")
+    publish_time = safe_text(row.get("publish_time"), "时间待确认")
+
+    with st.container(border=True):
+        col_title, col_action = st.columns([0.86, 0.14])
+        with col_title:
+            if url and url != "暂无":
+                st.markdown(f"**【{competitor} - {business}】** [{title}]({url})")
+            else:
+                st.markdown(f"**【{competitor} - {business}】** {title}")
+            st.caption(f"发布时间：{publish_time}　|　影响评估：{risk_text}（{score_text}）")
+        with col_action:
+            if record_id is not None and st.button("🗑️ 删除", key=f"del_{record_id}_{tab_prefix}"):
+                delete_news(record_id)
+
+        with st.expander("查看 DeepSeek 深度分析与应对策略"):
+            st.markdown(f"**AI资讯总结：** {safe_text(row.get('snippet'))}")
+            st.markdown(f"**🧠 业务影响分析：** {safe_text(row.get('ai_analysis'))}")
+            st.markdown(f"**💡 应对建议：** {safe_text(row.get('ai_suggestion'))}")
+
+
+st.subheader("📡 情报大盘视图")
+page_size = 30
+
+TECH_PLATFORMS = ("快递鸟", "菜鸟")
+competitor_text = filtered_df["competitor"].astype(str)
+is_tech = competitor_text.str.contains("快递鸟|菜鸟", regex=True, na=False)
+tech_df = filtered_df[is_tech].reset_index(drop=True)
+logistics_df = filtered_df[~is_tech].reset_index(drop=True)
+
+# 每个标签独立分页，避免某一类情报较少时被另一类情报占用分页名额
+tab1, tab2, tab3 = st.tabs([
+    f"🦅 聚合平台（{len(tech_df)} 条）",
+    f"📦 快递巨头（{len(logistics_df)} 条）",
+    f"📅 全景复盘（{len(filtered_df)} 条）",
+])
+
+with tab1:
+    if tech_df.empty:
+        st.info("当前筛选条件下没有聚合平台情报。")
+    else:
+        tech_pages = max(1, (len(tech_df) + page_size - 1) // page_size)
+        if st.session_state.get("tech_page_number", 1) > tech_pages:
+            st.session_state["tech_page_number"] = 1
+        tech_page = st.number_input(
+            f"聚合平台分页（共 {len(tech_df)} 条）", min_value=1,
+            max_value=tech_pages, value=1, step=1, key="tech_page_number"
+        )
+        tech_start = (int(tech_page) - 1) * page_size
+        for _, row in tech_df.iloc[tech_start:tech_start + page_size].iterrows():
+            render_news_card(row, "tech")
+
+with tab2:
+    if logistics_df.empty:
+        st.info("当前筛选条件下没有快递企业情报。")
+    else:
+        logistics_pages = max(1, (len(logistics_df) + page_size - 1) // page_size)
+        if st.session_state.get("logistics_page_number", 1) > logistics_pages:
+            st.session_state["logistics_page_number"] = 1
+        logistics_page = st.number_input(
+            f"快递企业分页（共 {len(logistics_df)} 条）", min_value=1,
+            max_value=logistics_pages, value=1, step=1, key="logistics_page_number"
+        )
+        logistics_start = (int(logistics_page) - 1) * page_size
+        for _, row in logistics_df.iloc[logistics_start:logistics_start + page_size].iterrows():
+            render_news_card(row, "logistics")
+
+with tab3:
+    st.caption("按当前所有筛选条件展示；选择‘全部日期’即可复盘全部历史情报。复盘列表独立分页，不会只显示最新几天。")
+    if filtered_df.empty:
+        st.info("当前筛选条件下没有可复盘的情报。")
+    else:
+        review_pages = max(1, (len(filtered_df) + page_size - 1) // page_size)
+        if st.session_state.get("review_page_number", 1) > review_pages:
+            st.session_state["review_page_number"] = 1
+        review_page = st.number_input(
+            f"全景复盘分页（共 {len(filtered_df)} 条）", min_value=1,
+            max_value=review_pages, value=1, step=1, key="review_page_number"
+        )
+        review_start = (int(review_page) - 1) * page_size
+        review_page_df = filtered_df.iloc[review_start:review_start + page_size]
+        grouped = review_page_df.groupby("real_date", dropna=False, sort=False)
+        for idx, (date_value, group) in enumerate(grouped):
+            date_label = date_value.strftime("%Y-%m-%d") if hasattr(date_value, "strftime") else "日期未知"
+            with st.expander(f"🗓️【{date_label}】（本页 {len(group)} 条）", expanded=(idx == 0)):
+                for _, row in group.iterrows():
+                    render_news_card(row, f"review_{date_label}")
+
+st.markdown("---")
+st.caption("数据说明：看板读取 news_v2 中 process_status = 1 的记录；被软删除（-1）及待分析（0）的记录不会显示。")
